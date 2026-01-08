@@ -69,20 +69,20 @@ st.markdown("""
         font-size: 1.1rem;
         font-weight: 600;
         color: #2c3e50;
-        margin-bottom: 0.8rem;
+        margin-bottom: 0.5rem;
         line-height: 1.4;
     }
     
     .doc-buttons-container {
         display: flex;
-        flex-wrap: nowrap;
+        flex-direction: row;
         gap: 8px;
-        overflow-x: auto;
-        padding-bottom: 5px;
+        flex-wrap: nowrap;
+        margin-top: 0.5rem;
     }
     
     .doc-button {
-        background-color: #e74c3c;
+        background-color: #27ae60;
         color: white;
         border: none;
         border-radius: 4px;
@@ -92,16 +92,17 @@ st.markdown("""
         font-weight: 500;
         white-space: nowrap;
         transition: background-color 0.2s;
+        display: inline-block;
     }
     
     .doc-button:hover {
-        background-color: #c0392b;
+        background-color: #229954;
         color: white;
         text-decoration: none;
     }
     
     .share-button {
-        background-color: #27ae60;
+        background-color: #3498db;
         color: white;
         border: none;
         border-radius: 4px;
@@ -113,7 +114,7 @@ st.markdown("""
     }
     
     .share-button:hover {
-        background-color: #229954;
+        background-color: #2980b9;
     }
     
     .update-info {
@@ -186,17 +187,6 @@ def init_supabase():
         st.error(f"❌ Errore connessione Supabase: {str(e)}")
         return None
 
-def is_circolare_scaduta(data_pubblicazione, giorni_scadenza=30):
-    if isinstance(data_pubblicazione, str):
-        data_pubblicazione = pd.to_datetime(data_pubblicazione)
-    
-    data_limite = datetime.now(timezone.utc) - timedelta(days=giorni_scadenza)
-    
-    if data_pubblicazione.tzinfo is None:
-        data_pubblicazione = data_pubblicazione.replace(tzinfo=timezone.utc)
-    
-    return data_pubblicazione < data_limite
-
 if 'last_update' not in st.session_state:
     st.session_state.last_update = datetime.now(timezone.utc)
 
@@ -213,65 +203,70 @@ supabase = init_supabase()
 
 if supabase:
     try:
-        response = supabase.table('circolari').select("*").order('data_pubblicazione', desc=True).execute()
+        oggi = datetime.now(timezone.utc)
+        limite_data = oggi - timedelta(days=30)
+        
+        response = supabase.table('circolari')\
+            .select("*")\
+            .gte('data_pubblicazione', limite_data.isoformat())\
+            .order('data_pubblicazione', desc=True)\
+            .execute()
+        
         df = pd.DataFrame(response.data)
         
         if not df.empty:
             df['data_pubblicazione'] = pd.to_datetime(df['data_pubblicazione'], utc=True)
-            df = df[~df['data_pubblicazione'].apply(is_circolare_scaduta)]
             
-            if df.empty:
-                st.info("📭 Nessuna circolare attiva")
-            else:
-                for idx, row in df.iterrows():
-                    data_pub = row['data_pubblicazione']
-                    is_new = (datetime.now(timezone.utc) - data_pub).days < 7
-                    data_pub_local = data_pub.astimezone(timezone(timedelta(hours=1)))
-                    
-                    badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
-                    
-                    st.markdown(f"""
-                    <div class="circolare-card">
-                        <div class="circolare-date">
-                            📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}
+            for idx, row in df.iterrows():
+                data_pub = row['data_pubblicazione']
+                is_new = (oggi - data_pub).days < 7
+                data_pub_local = data_pub.astimezone(timezone(timedelta(hours=1)))
+                
+                badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
+                
+                st.markdown(f"""
+                <div class="circolare-card">
+                    <div class="circolare-date">
+                        📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}
+                    </div>
+                    <div class="header-container">
+                        <div class="title-container">
+                            <div class="circolare-title">
+                                {row['titolo']} {badge_html}
+                            </div>
                         </div>
-                        <div class="header-container">
-                            <div class="title-container">
-                                <div class="circolare-title">
-                                    {row['titolo']} {badge_html}
-                                </div>
-                            </div>
-                            <div class="share-container">
-                                <button class="share-button" onclick="navigator.clipboard.writeText('📌 {row['titolo']}\\n\\n👉 Bacheca Circolari IC Anna Frank')">
-                                    📤 Condividi
-                                </button>
-                            </div>
+                        <div class="share-container">
+                            <button class="share-button" onclick="navigator.clipboard.writeText('📌 {row['titolo']}\\n\\n👉 Bacheca Circolari IC Anna Frank')">
+                                📤 Condividi
+                            </button>
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+                
+                if 'pdf_url' in row and pd.notna(row['pdf_url']):
+                    urls = str(row['pdf_url']).split(';;;')
+                    valid_urls = [url.strip() for url in urls if url.strip()]
                     
-                    if 'pdf_url' in row and pd.notna(row['pdf_url']):
-                        urls = str(row['pdf_url']).split(';;;')
-                        valid_urls = [url.strip() for url in urls if url.strip()]
+                    if valid_urls:
+                        st.markdown('<div class="doc-buttons-container">', unsafe_allow_html=True)
                         
-                        if valid_urls:
-                            st.markdown('<div class="doc-buttons-container">', unsafe_allow_html=True)
+                        for i, url in enumerate(valid_urls):
+                            base = os.environ.get("SUPABASE_URL", "").rstrip('/')
+                            if not url.startswith('http'):
+                                url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
                             
-                            for i, url in enumerate(valid_urls):
-                                base = os.environ.get("SUPABASE_URL", "").rstrip('/')
-                                if not url.startswith('http'):
-                                    url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
-                                
-                                st.markdown(
-                                    f'<a href="{url}" target="_blank" class="doc-button">'
-                                    f'📄 Documento {i+1}</a>',
-                                    unsafe_allow_html=True
-                                )
-                            
-                            st.markdown('</div>', unsafe_allow_html=True)
+                            st.markdown(
+                                f'<a href="{url}" target="_blank" class="doc-button">'
+                                f'📄 Documento {i+1}</a>',
+                                unsafe_allow_html=True
+                            )
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
+                
+                st.markdown('</div>')
         
         else:
-            st.info("📭 Nessuna circolare presente")
+            st.info("📭 Nessuna circolare presente negli ultimi 30 giorni")
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
