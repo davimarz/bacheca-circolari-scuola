@@ -1,34 +1,34 @@
-# Bacheca Circolari Automatica
+# 🏫 Bacheca Circolari Automatica
 
-Webapp automatica per la pubblicazione delle circolari scolastiche.
+Applicazione web per la gestione automatica delle circolari scolastiche.
 
-## Funzionalità
-- Visualizzazione circolari in tempo reale
-- Collegamento a documenti PDF
-- Aggiornamento automatico da Supabase
+## ✨ Nuove Funzionalità
 
-## Installazione Locale
-1. Clona il repository
-2. Crea ambiente virtuale: `python -m venv venv`
-3. Attiva: `venv\Scripts\activate` (Windows) o `source venv/bin/activate` (Mac/Linux)
-4. Installa dipendenze: `pip install -r requirements.txt`
-5. Crea file `.env` con le credenziali Supabase
-6. Avvia: `streamlit run app.py`
+### 1. Aggiornamento Automatico
+- ✅ Controllo automatico ogni **30 minuti**
+- ✅ Eliminazione automatica circolari > 30 giorni
+- ✅ Aggiunta nuove circolari dal sito scuola
 
-## Deploy su Render
-1. Push su GitHub
-2. Crea Web Service su Render
-3. Configura:
-   - Root Directory: `bacheca-automatica`
-   - Build Command: `pip install -r requirements.txt`
-   - Start Command: `streamlit run app.py --server.port $PORT --server.address 0.0.0.0`
-4. Aggiungi variabili d'ambiente:
-   - `SUPABASE_URL`
-   - `SUPABASE_KEY`
-   - `PORT=10000`
+### 2. Design Moderno
+- ✅ **Colori pastello** con gradienti eleganti
+- ✅ Card animate con hover effect
+- ✅ Layout responsive
+- ✅ Icone e badge colorati
 
-## Tecnologie
-- Streamlit
-- Supabase
-- Python
-- Render
+### 3. Documenti Allegati
+- ✅ Rinomina automatica: "Doc.1", "Doc.2", ecc.
+- ✅ Layout orizzontale pulsanti
+- ✅ Pulsanti con gradient e ombre
+
+### 4. Condivisione
+- ✅ Pulsante condividi su ogni circolare
+- ✅ Copia titolo + contenuto negli appunti
+- ✅ Notifica di conferma
+
+## 🛠️ Configurazione Scraping
+
+### Passo 1: Modifica `scraper.py`
+Apri `scraper.py` e modifica:
+```python
+# Riga 22 - URL del sito reale
+url_sito = "https://www.tua-scuola.edu.it/circolari"
