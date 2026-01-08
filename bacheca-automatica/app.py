@@ -1,7 +1,7 @@
 import streamlit as st
 from supabase import create_client
 import pandas as pd
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import urllib.parse
 import os
 import re
@@ -98,7 +98,7 @@ st.markdown("""
     
     .doc-button {
         background-color: #2c3e50;
-        color: #ecf0f1;
+        color: white;
         border: none;
         border-radius: 4px;
         padding: 6px 12px;
@@ -182,7 +182,8 @@ def init_supabase():
 
 def extract_circolare_number(titolo):
     if isinstance(titolo, str):
-        match = re.search(r'N\.?\s*(\d+)', titolo, re.IGNORECASE)
+        titolo_pulito = str(titolo).strip()
+        match = re.search(r'N\.?\s*(\d+)', titolo_pulito, re.IGNORECASE)
         if match:
             return int(match.group(1))
     return 0
@@ -203,11 +204,8 @@ supabase = init_supabase()
 
 if supabase:
     try:
-        inizio_anno_scolastico = datetime(2025, 9, 1, tzinfo=timezone.utc)
-        
         response = supabase.table('circolari')\
             .select("*")\
-            .gte('data_pubblicazione', inizio_anno_scolastico.isoformat())\
             .execute()
         
         df = pd.DataFrame(response.data)
@@ -223,13 +221,15 @@ if supabase:
             for idx, row in df.iterrows():
                 data_pub = row['data_pubblicazione']
                 is_new = (oggi - data_pub).days < 7
-                data_pub_local = data_pub.astimezone(timezone(timedelta(hours=1)))
+                data_pub_local = data_pub.astimezone(timezone.utc).astimezone()
                 
                 badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
                 
                 numero_html = ""
                 if row['numero_circolare'] > 0:
                     numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
+                
+                titolo_pulito = str(row['titolo']).strip()
                 
                 card_html = f'''
                 <div class="circolare-card">
@@ -238,7 +238,7 @@ if supabase:
                         <span class="circolare-date">📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}</span>
                     </div>
                     <div class="circolare-title">
-                        {row['titolo']} {badge_html}
+                        {titolo_pulito} {badge_html}
                     </div>
                 '''
                 
