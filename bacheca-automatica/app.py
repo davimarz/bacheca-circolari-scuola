@@ -1,7 +1,7 @@
 import streamlit as st
 from supabase import create_client
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import urllib.parse
 import os
 import re
@@ -238,21 +238,11 @@ def extract_circolare_number(titolo):
         titolo_pulito = str(titolo).strip()
         match = re.search(r'N\.?\s*(\d+)', titolo_pulito, re.IGNORECASE)
         if match:
-            return int(match.group(1))
+            try:
+                return int(match.group(1))
+            except:
+                return 0
     return 0
-
-def extract_circolare_year(titolo):
-    if isinstance(titolo, str):
-        titolo_pulito = str(titolo).strip()
-        match = re.search(r'(\d{4})[/-](\d{4})', titolo_pulito)
-        if match:
-            return f"{match.group(1)}-{match.group(2)}"
-    
-    data_attuale = datetime.now()
-    if data_attuale.month >= 9:
-        return f"{data_attuale.year}-{data_attuale.year + 1}"
-    else:
-        return f"{data_attuale.year - 1}-{data_attuale.year}"
 
 if 'last_update' not in st.session_state:
     st.session_state.last_update = datetime.now(timezone.utc)
@@ -263,7 +253,7 @@ if 'search_query' not in st.session_state:
 tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
 tempo_rimanente = max(0, 30 - int(tempo_trascorso))
 
-st.markdown("""
+st.markdown(f"""
 <div class="update-info">
     <div class="update-text">
         🔄 Prossimo aggiornamento automatico tra: <strong>{tempo_rimanente} minuti</strong>
@@ -301,8 +291,12 @@ supabase = init_supabase()
 
 if supabase:
     try:
+        oggi = datetime.now(timezone.utc)
+        limite_data = oggi - timedelta(days=30)
+        
         response = supabase.table('circolari')\
             .select("*")\
+            .gte('data_pubblicazione', limite_data.isoformat())\
             .execute()
         
         df = pd.DataFrame(response.data)
@@ -310,86 +304,77 @@ if supabase:
         if not df.empty:
             df['data_pubblicazione'] = pd.to_datetime(df['data_pubblicazione'], utc=True)
             df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
-            df['anno_scolastico'] = df['titolo'].apply(extract_circolare_year)
             
-            anno_corrente = extract_circolare_year("")
-            df_anno_corrente = df[df['anno_scolastico'] == anno_corrente]
-            
-            if not df_anno_corrente.empty:
-                if st.session_state.search_query:
-                    query = st.session_state.search_query.lower()
+            if st.session_state.search_query:
+                query = st.session_state.search_query.lower()
+                
+                def matches_search(row):
+                    titolo = str(row['titolo']).lower()
+                    numero = str(row['numero_circolare'])
                     
-                    def matches_search(row):
-                        titolo = str(row['titolo']).lower()
-                        numero = str(row['numero_circolare'])
-                        
-                        if query.isdigit():
-                            return query in numero
-                        else:
-                            return query in titolo
-                    
-                    df_filtered = df_anno_corrente[df_anno_corrente.apply(matches_search, axis=1)]
-                    
-                    if df_filtered.empty:
-                        st.info(f"🔍 Nessuna circolare trovata per: '{st.session_state.search_query}'")
-                        df_display = df_anno_corrente
+                    if query.isdigit():
+                        return query in numero
                     else:
-                        st.info(f"🔍 Risultati per: '{st.session_state.search_query}' ({len(df_filtered)} circolari trovate)")
-                        df_display = df_filtered
+                        return query in titolo
+                
+                df_filtered = df[df.apply(matches_search, axis=1)]
+                
+                if df_filtered.empty:
+                    st.info(f"🔍 Nessuna circolare trovata per: '{st.session_state.search_query}'")
+                    df_display = df
                 else:
-                    df_display = df_anno_corrente
-                
-                df_display = df_display.sort_values('numero_circolare', ascending=False)
-                
-                oggi = datetime.now(timezone.utc)
-                
-                for idx, row in df_display.iterrows():
-                    data_pub = row['data_pubblicazione']
-                    is_new = (oggi - data_pub).days < 7
-                    data_pub_local = data_pub.astimezone(timezone.utc).astimezone()
-                    
-                    badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
-                    
-                    numero_html = ""
-                    if row['numero_circolare'] > 0:
-                        numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
-                    
-                    titolo_pulito = str(row['titolo']).strip()
-                    
-                    card_html = f'''
-                    <div class="circolare-card">
-                        <div class="circolare-header">
-                            {numero_html}
-                            <span class="circolare-date">📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}</span>
-                        </div>
-                        <div class="circolare-title">
-                            {titolo_pulito} {badge_html}
-                        </div>
-                    '''
-                    
-                    if 'pdf_url' in row and pd.notna(row['pdf_url']):
-                        urls = str(row['pdf_url']).split(';;;')
-                        valid_urls = [url.strip() for url in urls if url.strip()]
-                        
-                        if valid_urls:
-                            card_html += '<div class="doc-buttons-container">'
-                            
-                            for i, url in enumerate(valid_urls):
-                                base = os.environ.get("SUPABASE_URL", "").rstrip('/')
-                                if not url.startswith('http'):
-                                    url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
-                                
-                                card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
-                            
-                            card_html += '</div>'
-                    
-                    card_html += '</div>'
-                    st.markdown(card_html, unsafe_allow_html=True)
+                    st.info(f"🔍 Risultati per: '{st.session_state.search_query}' ({len(df_filtered)} circolari trovate)")
+                    df_display = df_filtered
             else:
-                st.markdown(f'<div class="empty-state">📭 Nessuna circolare per l\'anno scolastico {anno_corrente}</div>', unsafe_allow_html=True)
+                df_display = df
+            
+            df_display = df_display.sort_values('numero_circolare', ascending=False)
+            
+            for idx, row in df_display.iterrows():
+                data_pub = row['data_pubblicazione']
+                is_new = (oggi - data_pub).days < 7
+                data_pub_local = data_pub.replace(tzinfo=timezone.utc).astimezone()
+                
+                badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
+                
+                numero_html = ""
+                if row['numero_circolare'] > 0:
+                    numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
+                
+                titolo_pulito = str(row['titolo']).strip()
+                
+                card_html = f'''
+                <div class="circolare-card">
+                    <div class="circolare-header">
+                        {numero_html}
+                        <span class="circolare-date">📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}</span>
+                    </div>
+                    <div class="circolare-title">
+                        {titolo_pulito} {badge_html}
+                    </div>
+                '''
+                
+                if 'pdf_url' in row and pd.notna(row['pdf_url']):
+                    urls = str(row['pdf_url']).split(';;;')
+                    valid_urls = [url.strip() for url in urls if url.strip()]
+                    
+                    if valid_urls:
+                        card_html += '<div class="doc-buttons-container">'
+                        
+                        for i, url in enumerate(valid_urls):
+                            base = os.environ.get("SUPABASE_URL", "").rstrip('/')
+                            if not url.startswith('http'):
+                                url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
+                            
+                            card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
+                        
+                        card_html += '</div>'
+                
+                card_html += '</div>'
+                st.markdown(card_html, unsafe_allow_html=True)
         
         else:
-            st.markdown('<div class="empty-state">📭 Nessuna circolare presente nel database</div>', unsafe_allow_html=True)
+            st.markdown('<div class="empty-state">📭 Nessuna circolare presente negli ultimi 30 giorni</div>', unsafe_allow_html=True)
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
