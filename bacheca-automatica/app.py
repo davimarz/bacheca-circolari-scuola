@@ -1,12 +1,9 @@
 import streamlit as st
 from supabase import create_client
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import urllib.parse
 import os
-import time
-import requests
-from bs4 import BeautifulSoup
 import hashlib
 import json
 
@@ -271,11 +268,19 @@ def init_supabase():
         return None
 
 def is_circolare_scaduta(data_pubblicazione, giorni_scadenza=30):
-    """Controlla se una circolare è scaduta"""
+    """Controlla se una circolare è scaduta - VERSIONE CORRETTA"""
     if isinstance(data_pubblicazione, str):
         data_pubblicazione = pd.to_datetime(data_pubblicazione)
     
-    data_limite = datetime.now() - timedelta(days=giorni_scadenza)
+    # Data limite in UTC (aware)
+    data_limite = datetime.now(timezone.utc) - timedelta(days=giorni_scadenza)
+    
+    # Se la data di pubblicazione è naive (senza timezone)
+    if data_pubblicazione.tzinfo is None:
+        # Converti in aware con UTC
+        data_pubblicazione = data_pubblicazione.replace(tzinfo=timezone.utc)
+    
+    # Confronto tra datetime entrambi aware
     return data_pubblicazione < data_limite
 
 def scarica_circolari_dal_sito():
@@ -292,13 +297,13 @@ def scarica_circolari_dal_sito():
             {
                 "titolo": "Avviso riunione docenti",
                 "contenuto": "Si comunica che giorno 15 gennaio si terrà la riunione di tutti i docenti.",
-                "data_pubblicazione": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "data_pubblicazione": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                 "pdf_url": "circolare_001.pdf;;;allegato_001.pdf"
             },
             {
                 "titolo": "Gita scolastica a Roma",
                 "contenuto": "Informazioni sulla gita programmata per il mese di marzo.",
-                "data_pubblicazione": (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                "data_pubblicazione": (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S"),
                 "pdf_url": "gita_roma.pdf"
             }
         ]
@@ -317,7 +322,7 @@ def aggiorna_database_automaticamente():
     """
     supabase = init_supabase()
     if not supabase:
-        return
+        return 0
     
     try:
         # 1. Scarica nuove circolari dal sito
@@ -337,18 +342,22 @@ def aggiorna_database_automaticamente():
             nuovi_hash.append(contenuto_hash)
         
         # 4. Aggiungi solo le nuove
+        nuove_aggiunte = 0
         for circ in nuove_circolari:
             if circ['hash'] not in [c.get('hash', '') for c in circolari_esistenti]:
                 # Rimuovi hash prima di salvare
                 circ_senza_hash = {k: v for k, v in circ.items() if k != 'hash'}
                 supabase.table('circolari').insert(circ_senza_hash).execute()
+                nuove_aggiunte += 1
         
         # 5. Elimina circolari vecchie di oltre 30 giorni
+        circolari_eliminate = 0
         for circ in circolari_esistenti:
             if is_circolare_scaduta(circ['data_pubblicazione']):
                 supabase.table('circolari').delete().eq('id', circ['id']).execute()
+                circolari_eliminate += 1
         
-        return len(nuove_circolari)
+        return nuove_aggiunte
         
     except Exception as e:
         st.error(f"Errore aggiornamento automatico: {str(e)}")
@@ -368,6 +377,10 @@ def genera_codice_condivisione(titolo, contenuto):
 # Inizializza Supabase
 supabase = init_supabase()
 
+# Inizializza session state per l'aggiornamento
+if 'last_update' not in st.session_state:
+    st.session_state.last_update = datetime.now(timezone.utc)
+
 # Sidebar per controlli
 with st.sidebar:
     st.title("⚙️ Controlli")
@@ -379,28 +392,30 @@ with st.sidebar:
                 st.success(f"Trovate {nuove} nuove circolari!")
             else:
                 st.info("Nessuna nuova circolare trovata")
+            st.session_state.last_update = datetime.now(timezone.utc)
             st.rerun()
     
     st.markdown("---")
     st.markdown("**📊 Statistiche**")
     
+    # Calcola tempo trascorso dall'ultimo aggiornamento
+    tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
+    
     # Auto-aggiornamento ogni 30 minuti
-    if 'last_update' not in st.session_state:
-        st.session_state.last_update = datetime.now()
-    
-    tempo_trascorso = (datetime.now() - st.session_state.last_update).seconds / 60
-    
     if tempo_trascorso > 30:  # 30 minuti
         with st.spinner("Auto-aggiornamento..."):
-            aggiorna_database_automaticamente()
-            st.session_state.last_update = datetime.now()
+            nuove = aggiorna_database_automaticamente()
+            st.session_state.last_update = datetime.now(timezone.utc)
+            if nuove > 0:
+                st.info(f"Auto-aggiornate {nuove} circolari")
             st.rerun()
 
 # Mostra info aggiornamento
+tempo_rimanente = max(0, 30 - int(tempo_trascorso))
 st.markdown(f"""
 <div class="update-info">
-    🔄 Prossimo aggiornamento automatico tra: <strong>{max(0, 30 - int(tempo_trascorso))} minuti</strong>
-    <br><small>Ultimo aggiornamento: {st.session_state.last_update.strftime('%H:%M')}</small>
+    🔄 Prossimo aggiornamento automatico tra: <strong>{tempo_rimanente} minuti</strong>
+    <br><small>Ultimo aggiornamento: {st.session_state.last_update.astimezone(timezone(timedelta(hours=1))).strftime('%H:%M')}</small>
 </div>
 """, unsafe_allow_html=True)
 
@@ -411,8 +426,10 @@ if supabase:
         df = pd.DataFrame(response.data)
         
         if not df.empty:
+            # Converti tutte le date in UTC (assicura che siano aware)
+            df['data_pubblicazione'] = pd.to_datetime(df['data_pubblicazione'], utc=True)
+            
             # Filtra circolari non scadute
-            df['data_pubblicazione'] = pd.to_datetime(df['data_pubblicazione'])
             df = df[~df['data_pubblicazione'].apply(is_circolare_scaduta)]
             
             if df.empty:
@@ -426,12 +443,17 @@ if supabase:
             else:
                 # Mostra ultimo aggiornamento
                 latest = df['data_pubblicazione'].max()
-                st.caption(f"📅 Ultimo aggiornamento: {latest.strftime('%d/%m/%Y %H:%M')}")
+                latest_local = latest.astimezone(timezone(timedelta(hours=1)))  # GMT+1
+                st.caption(f"📅 Ultimo aggiornamento: {latest_local.strftime('%d/%m/%Y %H:%M')}")
                 
                 # Mostra ogni circolare
                 for idx, row in df.iterrows():
                     # Determina se è nuova (< 7 giorni)
-                    is_new = (datetime.now() - row['data_pubblicazione']).days < 7
+                    data_pub = row['data_pubblicazione']
+                    is_new = (datetime.now(timezone.utc) - data_pub).days < 7
+                    
+                    # Converti data in locale per visualizzazione (GMT+1 per Italia)
+                    data_pub_local = data_pub.astimezone(timezone(timedelta(hours=1)))
                     
                     st.markdown(f"""
                     <div class="circolare-card">
@@ -443,7 +465,7 @@ if supabase:
                         </div>
                         
                         <div class="circolare-date">
-                            📅 Pubblicato il: {row['data_pubblicazione'].strftime('%d/%m/%Y alle %H:%M')}
+                            📅 Pubblicato il: {data_pub_local.strftime('%d/%m/%Y alle %H:%M')}
                         </div>
                         
                         <div class="circolare-content">
