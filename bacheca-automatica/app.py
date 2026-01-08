@@ -188,6 +188,19 @@ def extract_circolare_number(titolo):
             return int(match.group(1))
     return 0
 
+def extract_circolare_year(titolo):
+    if isinstance(titolo, str):
+        titolo_pulito = str(titolo).strip()
+        match = re.search(r'(\d{4})[/-](\d{4})', titolo_pulito)
+        if match:
+            return f"{match.group(1)}-{match.group(2)}"
+    
+    data_attuale = datetime.now()
+    if data_attuale.month >= 9:
+        return f"{data_attuale.year}-{data_attuale.year + 1}"
+    else:
+        return f"{data_attuale.year - 1}-{data_attuale.year}"
+
 if 'last_update' not in st.session_state:
     st.session_state.last_update = datetime.now(timezone.utc)
 
@@ -213,56 +226,63 @@ if supabase:
         if not df.empty:
             df['data_pubblicazione'] = pd.to_datetime(df['data_pubblicazione'], utc=True)
             df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
+            df['anno_scolastico'] = df['titolo'].apply(extract_circolare_year)
             
-            df = df.sort_values(['data_pubblicazione', 'numero_circolare'], ascending=[False, False])
+            anno_corrente = extract_circolare_year("")
+            df_anno_corrente = df[df['anno_scolastico'] == anno_corrente]
             
-            oggi = datetime.now(timezone.utc)
-            
-            for idx, row in df.iterrows():
-                data_pub = row['data_pubblicazione']
-                is_new = (oggi - data_pub).days < 7
-                data_pub_local = data_pub.astimezone(timezone.utc).astimezone()
+            if not df_anno_corrente.empty:
+                df_anno_corrente = df_anno_corrente.sort_values('numero_circolare', ascending=False)
                 
-                badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
+                oggi = datetime.now(timezone.utc)
                 
-                numero_html = ""
-                if row['numero_circolare'] > 0:
-                    numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
-                
-                titolo_pulito = str(row['titolo']).strip()
-                
-                card_html = f'''
-                <div class="circolare-card">
-                    <div class="circolare-header">
-                        {numero_html}
-                        <span class="circolare-date">📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}</span>
-                    </div>
-                    <div class="circolare-title">
-                        {titolo_pulito} {badge_html}
-                    </div>
-                '''
-                
-                if 'pdf_url' in row and pd.notna(row['pdf_url']):
-                    urls = str(row['pdf_url']).split(';;;')
-                    valid_urls = [url.strip() for url in urls if url.strip()]
+                for idx, row in df_anno_corrente.iterrows():
+                    data_pub = row['data_pubblicazione']
+                    is_new = (oggi - data_pub).days < 7
+                    data_pub_local = data_pub.astimezone(timezone.utc).astimezone()
                     
-                    if valid_urls:
-                        card_html += '<div class="doc-buttons-container">'
+                    badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
+                    
+                    numero_html = ""
+                    if row['numero_circolare'] > 0:
+                        numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
+                    
+                    titolo_pulito = str(row['titolo']).strip()
+                    
+                    card_html = f'''
+                    <div class="circolare-card">
+                        <div class="circolare-header">
+                            {numero_html}
+                            <span class="circolare-date">📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}</span>
+                        </div>
+                        <div class="circolare-title">
+                            {titolo_pulito} {badge_html}
+                        </div>
+                    '''
+                    
+                    if 'pdf_url' in row and pd.notna(row['pdf_url']):
+                        urls = str(row['pdf_url']).split(';;;')
+                        valid_urls = [url.strip() for url in urls if url.strip()]
                         
-                        for i, url in enumerate(valid_urls):
-                            base = os.environ.get("SUPABASE_URL", "").rstrip('/')
-                            if not url.startswith('http'):
-                                url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
+                        if valid_urls:
+                            card_html += '<div class="doc-buttons-container">'
                             
-                            card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
-                        
-                        card_html += '</div>'
-                
-                card_html += '</div>'
-                st.markdown(card_html, unsafe_allow_html=True)
+                            for i, url in enumerate(valid_urls):
+                                base = os.environ.get("SUPABASE_URL", "").rstrip('/')
+                                if not url.startswith('http'):
+                                    url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
+                                
+                                card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
+                            
+                            card_html += '</div>'
+                    
+                    card_html += '</div>'
+                    st.markdown(card_html, unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="empty-state">📭 Nessuna circolare per l\'anno scolastico {anno_corrente}</div>', unsafe_allow_html=True)
         
         else:
-            st.markdown('<div class="empty-state">📭 Nessuna circolare presente</div>', unsafe_allow_html=True)
+            st.markdown('<div class="empty-state">📭 Nessuna circolare presente nel database</div>', unsafe_allow_html=True)
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
