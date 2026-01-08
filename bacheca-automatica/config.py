@@ -13,6 +13,9 @@ CONFIG = {
     # URL sito scuola (DA MODIFICARE)
     'URL_SITO_SCUOLA': "https://www.icannafrankag.edu.it/circolari",
     
+    # Fuso orario Italia (GMT+1, GMT+2 in ora legale)
+    'TIMEZONE_ITALIA': 1,
+    
     # Color palette pastello
     'COLORS': {
         'primary': '#667eea',
