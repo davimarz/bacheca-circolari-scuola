@@ -43,12 +43,40 @@ st.markdown("""
 def init_supabase():
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
-    if url and key:
+    
+    # Debug: mostra se le variabili esistono (rimuovi in produzione)
+    debug_mode = os.environ.get("DEBUG", "false").lower() == "true"
+    if debug_mode:
+        st.write("DEBUG - SUPABASE_URL presente:", "SI" if url else "NO")
+        if url:
+            st.write("DEBUG - URL inizia con https://:", url.startswith("https://"))
+    
+    if not url or not key:
+        st.error("❌ Configura SUPABASE_URL e SUPABASE_KEY nelle variabili d'ambiente")
+        return None
+    
+    if not url.startswith("https://"):
+        st.error("❌ SUPABASE_URL deve iniziare con https://")
+        return None
+    
+    try:
         return create_client(url, key)
-    st.error("Configura SUPABASE_URL e SUPABASE_KEY")
-    return None
+    except Exception as e:
+        st.error(f"❌ Errore connessione Supabase: {str(e)}")
+        return None
 
 supabase = init_supabase()
+
+# Debug info (rimuovi in produzione)
+debug_mode = os.environ.get("DEBUG", "false").lower() == "true"
+if debug_mode and supabase is None:
+    st.write("DEBUG - Variabili ambiente:")
+    st.write("- SUPABASE_URL:", os.environ.get("SUPABASE_URL", "Non impostato"))
+    supabase_key = os.environ.get("SUPABASE_KEY")
+    if supabase_key:
+        st.write("- SUPABASE_KEY:", "***" + supabase_key[-4:])
+    else:
+        st.write("- SUPABASE_KEY: Non impostato")
 
 # Carica dati
 if supabase:
@@ -75,5 +103,9 @@ if supabase:
                             st.markdown(f'<a href="{url}" target="_blank" class="pdf-button">📄 Documento {i+1}</a>', unsafe_allow_html=True)
                 
                 st.markdown("---")
-    except:
-        st.info("Caricamento in corso...")
+        else:
+            st.info("📭 Nessuna circolare presente")
+    except Exception as e:
+        st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
+else:
+    st.warning("⚠️ Impossibile connettersi al database. Controlla le configurazioni.")
