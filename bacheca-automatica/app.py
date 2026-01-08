@@ -61,20 +61,23 @@ st.markdown("""
     
     .circolare-header {
         margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
     }
     
     .circolare-number {
         font-size: 0.9rem;
         color: #3498db;
         font-weight: 600;
-        margin-right: 10px;
-        display: inline-block;
+        background-color: #ecf0f1;
+        padding: 2px 8px;
+        border-radius: 4px;
     }
     
     .circolare-date {
         font-size: 0.85rem;
         color: #7f8c8d;
-        display: inline-block;
     }
     
     .circolare-title {
@@ -90,11 +93,12 @@ st.markdown("""
         flex-direction: row;
         gap: 8px;
         flex-wrap: wrap;
+        align-items: center;
     }
     
     .doc-button {
-        background-color: #27ae60;
-        color: white;
+        background-color: #2c3e50;
+        color: #ecf0f1;
         border: none;
         border-radius: 4px;
         padding: 6px 12px;
@@ -102,11 +106,14 @@ st.markdown("""
         font-size: 0.85rem;
         font-weight: 500;
         transition: background-color 0.2s;
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
     }
     
     .doc-button:hover {
-        background-color: #229954;
+        background-color: #34495e;
         color: white;
         text-decoration: none;
     }
@@ -224,40 +231,35 @@ if supabase:
                 if row['numero_circolare'] > 0:
                     numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
                 
-                st.markdown(f"""
+                card_html = f'''
                 <div class="circolare-card">
                     <div class="circolare-header">
                         {numero_html}
-                        <span class="circolare-date">
-                            📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}
-                        </span>
+                        <span class="circolare-date">📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}</span>
                     </div>
                     <div class="circolare-title">
                         {row['titolo']} {badge_html}
                     </div>
-                """, unsafe_allow_html=True)
+                '''
                 
                 if 'pdf_url' in row and pd.notna(row['pdf_url']):
                     urls = str(row['pdf_url']).split(';;;')
                     valid_urls = [url.strip() for url in urls if url.strip()]
                     
                     if valid_urls:
-                        st.markdown('<div class="doc-buttons-container">', unsafe_allow_html=True)
+                        card_html += '<div class="doc-buttons-container">'
                         
                         for i, url in enumerate(valid_urls):
                             base = os.environ.get("SUPABASE_URL", "").rstrip('/')
                             if not url.startswith('http'):
                                 url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
                             
-                            st.markdown(
-                                f'<a href="{url}" target="_blank" class="doc-button">'
-                                f'📄 Documento {i+1}</a>',
-                                unsafe_allow_html=True
-                            )
+                            card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
                         
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        card_html += '</div>'
                 
-                st.markdown('</div>')
+                card_html += '</div>'
+                st.markdown(card_html, unsafe_allow_html=True)
         
         else:
             st.markdown('<div class="empty-state">📭 Nessuna circolare presente</div>', unsafe_allow_html=True)
