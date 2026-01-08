@@ -27,7 +27,7 @@ st.markdown("""
         padding: 2rem 1rem;
         background-color: #2c3e50;
         border-radius: 10px;
-        margin-bottom: 2rem;
+        margin-bottom: 1rem;
         color: white;
     }
     
@@ -126,6 +126,44 @@ st.markdown("""
         text-align: center;
         font-size: 0.9rem;
         color: #2c3e50;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .update-text {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .search-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .search-input {
+        padding: 6px 12px;
+        border: 1px solid #bdc3c7;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        width: 250px;
+    }
+    
+    .search-button {
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .search-button:hover {
+        background-color: #2980b9;
     }
     
     .badge {
@@ -149,6 +187,21 @@ st.markdown("""
         text-align: center;
         padding: 3rem;
         color: #7f8c8d;
+    }
+    
+    .clear-search {
+        background-color: #e74c3c;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .clear-search:hover {
+        background-color: #c0392b;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -204,14 +257,45 @@ def extract_circolare_year(titolo):
 if 'last_update' not in st.session_state:
     st.session_state.last_update = datetime.now(timezone.utc)
 
+if 'search_query' not in st.session_state:
+    st.session_state.search_query = ""
+
 tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
 tempo_rimanente = max(0, 30 - int(tempo_trascorso))
 
-st.markdown(f"""
+st.markdown("""
 <div class="update-info">
-    🔄 Prossimo aggiornamento automatico tra: <strong>{tempo_rimanente} minuti</strong>
+    <div class="update-text">
+        🔄 Prossimo aggiornamento automatico tra: <strong>{tempo_rimanente} minuti</strong>
+    </div>
+    <div class="search-container">
+        <input type="text" id="searchInput" class="search-input" placeholder="Cerca per numero o testo..." value="{st.session_state.search_query}" onkeydown="if(event.keyCode==13) searchCircolari()">
+        <button class="search-button" onclick="searchCircolari()">🔍 Cerca</button>
+        <button class="clear-search" onclick="clearSearch()">❌ Cancella</button>
+    </div>
 </div>
+""".format(tempo_rimanente=tempo_rimanente), unsafe_allow_html=True)
+
+st.markdown("""
+<script>
+function searchCircolari() {
+    var searchInput = document.getElementById('searchInput');
+    var query = searchInput.value;
+    
+    if (query.trim() !== '') {
+        window.location.href = window.location.pathname + '?search=' + encodeURIComponent(query);
+    }
+}
+
+function clearSearch() {
+    window.location.href = window.location.pathname;
+}
+</script>
 """, unsafe_allow_html=True)
+
+query_params = st.query_params
+if 'search' in query_params:
+    st.session_state.search_query = query_params['search']
 
 supabase = init_supabase()
 
@@ -232,11 +316,34 @@ if supabase:
             df_anno_corrente = df[df['anno_scolastico'] == anno_corrente]
             
             if not df_anno_corrente.empty:
-                df_anno_corrente = df_anno_corrente.sort_values('numero_circolare', ascending=False)
+                if st.session_state.search_query:
+                    query = st.session_state.search_query.lower()
+                    
+                    def matches_search(row):
+                        titolo = str(row['titolo']).lower()
+                        numero = str(row['numero_circolare'])
+                        
+                        if query.isdigit():
+                            return query in numero
+                        else:
+                            return query in titolo
+                    
+                    df_filtered = df_anno_corrente[df_anno_corrente.apply(matches_search, axis=1)]
+                    
+                    if df_filtered.empty:
+                        st.info(f"🔍 Nessuna circolare trovata per: '{st.session_state.search_query}'")
+                        df_display = df_anno_corrente
+                    else:
+                        st.info(f"🔍 Risultati per: '{st.session_state.search_query}' ({len(df_filtered)} circolari trovate)")
+                        df_display = df_filtered
+                else:
+                    df_display = df_anno_corrente
+                
+                df_display = df_display.sort_values('numero_circolare', ascending=False)
                 
                 oggi = datetime.now(timezone.utc)
                 
-                for idx, row in df_anno_corrente.iterrows():
+                for idx, row in df_display.iterrows():
                     data_pub = row['data_pubblicazione']
                     is_new = (oggi - data_pub).days < 7
                     data_pub_local = data_pub.astimezone(timezone.utc).astimezone()
