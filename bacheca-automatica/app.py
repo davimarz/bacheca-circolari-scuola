@@ -253,6 +253,7 @@ if 'search_query' not in st.session_state:
 tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
 tempo_rimanente = max(0, 30 - int(tempo_trascorso))
 
+# RIGA 277 (circa) CORRETTA - usando solo f-string
 st.markdown(f"""
 <div class="update-info">
     <div class="update-text">
@@ -264,7 +265,7 @@ st.markdown(f"""
         <button class="clear-search" onclick="clearSearch()">❌ Cancella</button>
     </div>
 </div>
-""".format(tempo_rimanente=tempo_rimanente), unsafe_allow_html=True)
+""", unsafe_allow_html=True)  # Rimosso .format() e corretto unsafe_allow_html=True
 
 st.markdown("""
 <script>
