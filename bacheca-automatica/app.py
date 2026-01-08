@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import urllib.parse
 import os
+import re
 
 st.set_page_config(
     page_title="Bacheca Circolari",
@@ -58,18 +59,29 @@ st.markdown("""
         border-left: 4px solid #3498db;
     }
     
+    .circolare-header {
+        margin-bottom: 0.5rem;
+    }
+    
+    .circolare-number {
+        font-size: 0.9rem;
+        color: #3498db;
+        font-weight: 600;
+        margin-right: 10px;
+        display: inline-block;
+    }
+    
     .circolare-date {
         font-size: 0.85rem;
         color: #7f8c8d;
-        margin-bottom: 0.3rem;
-        font-weight: 500;
+        display: inline-block;
     }
     
     .circolare-title {
         font-size: 1.1rem;
         font-weight: 600;
         color: #2c3e50;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.8rem;
         line-height: 1.4;
     }
     
@@ -77,8 +89,7 @@ st.markdown("""
         display: flex;
         flex-direction: row;
         gap: 8px;
-        flex-wrap: nowrap;
-        margin-top: 0.5rem;
+        flex-wrap: wrap;
     }
     
     .doc-button {
@@ -90,7 +101,6 @@ st.markdown("""
         text-decoration: none;
         font-size: 0.85rem;
         font-weight: 500;
-        white-space: nowrap;
         transition: background-color 0.2s;
         display: inline-block;
     }
@@ -101,22 +111,6 @@ st.markdown("""
         text-decoration: none;
     }
     
-    .share-button {
-        background-color: #3498db;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
-        font-size: 0.85rem;
-        cursor: pointer;
-        margin-left: 10px;
-        transition: background-color 0.2s;
-    }
-    
-    .share-button:hover {
-        background-color: #2980b9;
-    }
-    
     .update-info {
         background-color: #ecf0f1;
         border-radius: 6px;
@@ -125,20 +119,6 @@ st.markdown("""
         text-align: center;
         font-size: 0.9rem;
         color: #2c3e50;
-    }
-    
-    .header-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    .title-container {
-        flex-grow: 1;
-    }
-    
-    .share-container {
-        flex-shrink: 0;
     }
     
     .badge {
@@ -156,6 +136,12 @@ st.markdown("""
     .badge-old {
         background-color: #95a5a6;
         color: white;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        color: #7f8c8d;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -187,6 +173,13 @@ def init_supabase():
         st.error(f"❌ Errore connessione Supabase: {str(e)}")
         return None
 
+def extract_circolare_number(titolo):
+    if isinstance(titolo, str):
+        match = re.search(r'N\.?\s*(\d+)', titolo, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+    return 0
+
 if 'last_update' not in st.session_state:
     st.session_state.last_update = datetime.now(timezone.utc)
 
@@ -203,19 +196,22 @@ supabase = init_supabase()
 
 if supabase:
     try:
-        oggi = datetime.now(timezone.utc)
-        limite_data = oggi - timedelta(days=30)
+        inizio_anno_scolastico = datetime(2025, 9, 1, tzinfo=timezone.utc)
         
         response = supabase.table('circolari')\
             .select("*")\
-            .gte('data_pubblicazione', limite_data.isoformat())\
-            .order('data_pubblicazione', desc=True)\
+            .gte('data_pubblicazione', inizio_anno_scolastico.isoformat())\
             .execute()
         
         df = pd.DataFrame(response.data)
         
         if not df.empty:
             df['data_pubblicazione'] = pd.to_datetime(df['data_pubblicazione'], utc=True)
+            df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
+            
+            df = df.sort_values(['data_pubblicazione', 'numero_circolare'], ascending=[False, False])
+            
+            oggi = datetime.now(timezone.utc)
             
             for idx, row in df.iterrows():
                 data_pub = row['data_pubblicazione']
@@ -224,22 +220,20 @@ if supabase:
                 
                 badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
                 
+                numero_html = ""
+                if row['numero_circolare'] > 0:
+                    numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
+                
                 st.markdown(f"""
                 <div class="circolare-card">
-                    <div class="circolare-date">
-                        📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}
+                    <div class="circolare-header">
+                        {numero_html}
+                        <span class="circolare-date">
+                            📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}
+                        </span>
                     </div>
-                    <div class="header-container">
-                        <div class="title-container">
-                            <div class="circolare-title">
-                                {row['titolo']} {badge_html}
-                            </div>
-                        </div>
-                        <div class="share-container">
-                            <button class="share-button" onclick="navigator.clipboard.writeText('📌 {row['titolo']}\\n\\n👉 Bacheca Circolari IC Anna Frank')">
-                                📤 Condividi
-                            </button>
-                        </div>
+                    <div class="circolare-title">
+                        {row['titolo']} {badge_html}
                     </div>
                 """, unsafe_allow_html=True)
                 
@@ -266,7 +260,7 @@ if supabase:
                 st.markdown('</div>')
         
         else:
-            st.info("📭 Nessuna circolare presente negli ultimi 30 giorni")
+            st.markdown('<div class="empty-state">📭 Nessuna circolare presente</div>', unsafe_allow_html=True)
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
