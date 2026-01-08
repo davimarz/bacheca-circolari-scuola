@@ -5,7 +5,7 @@ DA MODIFICARE in base alla struttura reale del sito
 
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 
 def scarica_circolari_reali(url_sito):
@@ -48,10 +48,11 @@ def scarica_circolari_reali(url_sito):
             for riga in righe:
                 celle = riga.find_all('td')
                 if len(celle) >= 3:
+                    data_pub = parse_data(celle[2].text.strip())
                     circolare = {
                         'titolo': celle[0].text.strip(),
                         'contenuto': celle[1].text.strip(),
-                        'data_pubblicazione': parse_data(celle[2].text.strip()),
+                        'data_pubblicazione': data_pub.strftime("%Y-%m-%d %H:%M:%S"),
                         'pdf_url': extract_pdf_url(celle[0])  # Cerca link PDF
                     }
                     circolari.append(circolare)
@@ -83,7 +84,7 @@ def scarica_circolari_reali(url_sito):
                 circolari.append({
                     'titolo': titolo,
                     'contenuto': contenuto[:500],  # Limita lunghezza
-                    'data_pubblicazione': data_text or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'data_pubblicazione': data_text or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                     'pdf_url': pdf_url
                 })
         
@@ -94,43 +95,49 @@ def scarica_circolari_reali(url_sito):
         return []
 
 def parse_data(testo_data):
-    """Converte testo data in formato standard"""
+    """Converte testo data in formato standard - VERSIONE CORRETTA"""
     try:
         # Pattern comuni per date italiane
         patterns = [
-            r'(\d{2})/(\d{2})/(\d{4})',  # dd/mm/yyyy
-            r'(\d{2})-(\d{2})-(\d{4})',  # dd-mm-yyyy
-            r'(\d{4})-(\d{2})-(\d{2})',  # yyyy-mm-dd
+            (r'(\d{2})/(\d{2})/(\d{4})', "%d/%m/%Y"),      # dd/mm/yyyy
+            (r'(\d{2})-(\d{2})-(\d{4})', "%d-%m-%Y"),      # dd-mm-yyyy
+            (r'(\d{4})-(\d{2})-(\d{2})', "%Y-%m-%d"),      # yyyy-mm-dd
+            (r'(\d{2})/(\d{2})/(\d{4})\s+(\d{2}):(\d{2})', "%d/%m/%Y %H:%M"),  # dd/mm/yyyy HH:MM
         ]
         
-        for pattern in patterns:
+        for pattern, fmt in patterns:
             match = re.search(pattern, testo_data)
             if match:
-                if pattern == patterns[0]:  # dd/mm/yyyy
-                    return f"{match.group(3)}-{match.group(2)}-{match.group(1)} 00:00:00"
-                elif pattern == patterns[1]:  # dd-mm-yyyy
-                    return f"{match.group(3)}-{match.group(2)}-{match.group(1)} 00:00:00"
-                elif pattern == patterns[2]:  # yyyy-mm-dd
-                    return f"{match.group(1)}-{match.group(2)}-{match.group(3)} 00:00:00"
+                # Costruisci stringa data
+                if len(match.groups()) == 3:
+                    data_str = f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
+                    return datetime.strptime(data_str, "%Y-%m-%d")
+                elif len(match.groups()) == 5:
+                    data_str = f"{match.group(3)}-{match.group(2)}-{match.group(1)} {match.group(4)}:{match.group(5)}"
+                    return datetime.strptime(data_str, "%Y-%m-%d %H:%M")
         
         # Se non trova pattern, usa oggi
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    except:
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.now(timezone.utc)
+        
+    except Exception:
+        # In caso di errore, ritorna datetime UTC corrente
+        return datetime.now(timezone.utc)
 
 def extract_data_da_testo(testo):
     """Estrae data da testo"""
     # Cerca pattern di data nel testo
     date_patterns = [
-        r'\d{2}/\d{2}/\d{4}',  # dd/mm/yyyy
-        r'\d{2}-\d{2}-\d{4}',  # dd-mm-yyyy
-        r'\d{4}-\d{2}-\d{2}',  # yyyy-mm-dd
+        r'\d{2}/\d{2}/\d{4}',
+        r'\d{2}-\d{2}-\d{4}',
+        r'\d{4}-\d{2}-\d{2}',
+        r'\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}',
     ]
     
     for pattern in date_patterns:
         match = re.search(pattern, testo)
         if match:
-            return parse_data(match.group())
+            parsed_date = parse_data(match.group())
+            return parsed_date.strftime("%Y-%m-%d %H:%M:%S")
     
     return None
 
