@@ -261,21 +261,14 @@ def extract_circolare_number(titolo):
 def safe_convert_to_local_date(timestamp):
     """
     Converte in modo sicuro un pandas Timestamp o datetime in data locale
-    EVITA astimezone() su pandas Timestamp che causa tz_convert() error
     """
     try:
-        # Se è pandas Timestamp, estrai solo la data (senza timezone)
         if hasattr(timestamp, 'strftime'):
-            # Formatta direttamente senza conversione timezone
-            # pandas Timestamp.strftime() gestisce il formato correttamente
             date_str = timestamp.strftime('%Y-%m-%d')
-            # Crea datetime naive dalla stringa
             return datetime.strptime(date_str, '%Y-%m-%d')
         else:
-            # Se è già datetime, usalo così com'è
             return timestamp
     except Exception:
-        # In caso di errore, ritorna datetime.now()
         return datetime.now()
 
 if 'last_update' not in st.session_state:
@@ -328,21 +321,20 @@ if supabase:
         oggi = datetime.now(timezone.utc)
         limite_data = oggi - timedelta(days=CIRCOLARI_VALIDITA_GIORNI)
         
-        # CORREZIONE: Usa 'data_publicazione' (con una b) come nel database
+        # CORREZIONE FINALE: usa 'data_pubblica' (come nel database)
         response = supabase.table('circolari')\
             .select("*")\
-            .gte('data_publicazione', limite_data.isoformat())\
+            .gte('data_pubblica', limite_data.isoformat())\
             .execute()
         
         df = pd.DataFrame(response.data)
         
         if not df.empty:
-            # CORREZIONE: Usa il nome corretto della colonna dal database
-            if 'data_publicazione' in df.columns:
-                # Converti senza timezone per evitare problemi
-                df['data_pubblicazione'] = pd.to_datetime(df['data_publicazione'])
+            # CORREZIONE: Cerca 'data_pubblica' e convertila
+            if 'data_pubblica' in df.columns:
+                df['data_pubblicazione'] = pd.to_datetime(df['data_pubblica'])
             else:
-                st.error("❌ Colonna 'data_publicazione' non trovata nel database")
+                st.error("❌ Colonna 'data_pubblica' non trovata nel database")
                 st.stop()
             
             df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
@@ -376,7 +368,6 @@ if supabase:
                 data_pub = row['data_pubblicazione']
                 is_new = (oggi - data_pub).days < 7
                 
-                # CORREZIONE PRINCIPALE: Usa la funzione sicura per convertire la data
                 data_pub_safe = safe_convert_to_local_date(data_pub)
                 
                 badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
@@ -419,7 +410,6 @@ if supabase:
                 st.markdown(card_html, unsafe_allow_html=True)
         
         else:
-            # CORREZIONE: f-string mancante
             st.markdown(f'<div class="empty-state">📭 Nessuna circolare presente negli ultimi {CIRCOLARI_VALIDITA_GIORNI} giorni</div>', unsafe_allow_html=True)
             
     except Exception as e:
