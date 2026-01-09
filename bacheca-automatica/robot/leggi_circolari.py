@@ -4,12 +4,11 @@ import glob
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from supabase import create_client
-import urllib.parse
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import re
 
 print("🤖 Robot avviato")
@@ -20,31 +19,36 @@ print("🤖 Robot avviato")
 config = {
     'ARGO_USER': os.environ.get('ARGO_USER'),
     'ARGO_PASS': os.environ.get('ARGO_PASS'),
-    'SUPABASE_URL': os.environ.get('SUPABASE_URL'),
-    'SUPABASE_KEY': os.environ.get('SUPABASE_KEY')
+    'DB_HOST': 'db.ojnofjebrlwrlowovvjd.supabase.co',
+    'DB_PORT': '5432',
+    'DB_NAME': 'postgres',
+    'DB_USER': 'postgres',
+    'DB_PASSWORD': os.environ.get('DB_PASSWORD'),
 }
+
+# Verifica configurazione
+if not config['ARGO_USER'] or not config['ARGO_PASS']:
+    print("❌ ERRORE: Configura ARGO_USER e ARGO_PASS nelle variabili d'ambiente")
+    exit(1)
+
+if not config['DB_PASSWORD']:
+    print("❌ ERRORE: Configura DB_PASSWORD (password di Supabase PostgreSQL)")
+    exit(1)
 
 # ==============================================================================
 
-# --- PREPARAZIONE CARTELLA TEMPORANEA ---
-cartella_download = os.path.join(os.getcwd(), "scaricati")
-if not os.path.exists(cartella_download):
-    os.makedirs(cartella_download)
-
-# Pulizia iniziale
-files = glob.glob(os.path.join(cartella_download, "*"))
-for f in files:
-    os.remove(f)
-
-# --- CONFIGURAZIONE CHROME ---
+# --- CONFIGURAZIONE CHROME SEMPLIFICATA ---
 chrome_options = Options()
 chrome_options.add_argument("--headless")
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
-chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--window-size=1920,1080")
 
 # Configurazione download PDF
+cartella_download = os.path.join(os.getcwd(), "downloads_temp")
+if not os.path.exists(cartella_download):
+    os.makedirs(cartella_download)
+
 prefs = {
     "download.default_directory": cartella_download,
     "download.prompt_for_download": False,
@@ -53,13 +57,34 @@ prefs = {
 }
 chrome_options.add_experimental_option("prefs", prefs)
 
-# --- INIZIALIZZAZIONE SUPABASE ---
-print("📡 Mi collego a Supabase...")
-supabase = create_client(config['SUPABASE_URL'], config['SUPABASE_KEY'])
+# --- CONNESSIONE POSTGRESQL ---
+def get_db_connection():
+    """Crea e restituisce una connessione al database PostgreSQL"""
+    try:
+        conn = psycopg2.connect(
+            host=config['DB_HOST'],
+            port=config['DB_PORT'],
+            database=config['DB_NAME'],
+            user=config['DB_USER'],
+            password=config['DB_PASSWORD'],
+            sslmode='require'
+        )
+        return conn
+    except Exception as e:
+        print(f"❌ Errore connessione database: {e}")
+        raise
+
+print("📡 Mi collego al database PostgreSQL...")
+conn = get_db_connection()
+cur = conn.cursor(cursor_factory=RealDictCursor)
 
 print("🤖 Avvio il browser...")
 driver = webdriver.Chrome(options=chrome_options)
 wait = WebDriverWait(driver, 30)
+
+# ==============================================================================
+# FUNZIONI UTILITY
+# ==============================================================================
 
 def attendi_e_trova_file():
     """Attende il download del file e restituisce il percorso"""
@@ -74,340 +99,286 @@ def attendi_e_trova_file():
         timer += 1
     return None
 
-def rimuovi_circolari_vecchie():
-    """Rimuove dal database le circolari più vecchie di 30 giorni"""
-    print("🧹 Controllo circolari vecchie...")
+def estrai_data_dal_testo(testo):
+    """Estrae la data di pubblicazione dal testo della circolare"""
+    if not testo:
+        return None
     
-    # Calcola la data di 30 giorni fa
-    data_limite = (datetime.now() - timedelta(days=30)).isoformat()
+    # Cerca pattern di data nel formato DD/MM/YYYY
+    pattern = r'(\d{2})/(\d{2})/(\d{4})'
+    matches = re.findall(pattern, testo)
     
-    # Trova tutte le circolari più vecchie di 30 giorni
-    res = supabase.table('circolari').select("*").lt('data_pubblica', data_limite).execute()
-    
-    circolari_vecchie = res.data
-    if not circolari_vecchie:
-        print("   ✅ Nessuna circolare vecchia da eliminare.")
-        return
-    
-    print(f"   🗑️  Trovate {len(circolari_vecchie)} circolari vecchie da eliminare...")
-    
-    for circolare in circolari_vecchie:
-        titolo = circolare['titolo']
-        pdf_url = circolare.get('pdf_url', '')
-        
-        # Elimina i file dallo storage se presenti
-        if pdf_url:
-            try:
-                # Estrai i nomi dei file dagli URL
-                urls = pdf_url.split(';;;')
-                for url in urls:
-                    if url.strip():
-                        # Estrai il nome del file dall'URL
-                        filename = url.split('/')[-1]
-                        if filename:
-                            try:
-                                # Elimina dal bucket 'documenti'
-                                supabase.storage.from_("documenti").remove([filename])
-                                print(f"      📄 Rimosso file: {filename}")
-                            except Exception as e:
-                                print(f"      ⚠️  Errore rimozione file {filename}: {e}")
-            except Exception as e:
-                print(f"      ⚠️  Errore elaborazione URL: {e}")
-        
-        # Elimina la circolare dal database
+    for match in matches:
         try:
-            supabase.table('circolari').delete().eq('id', circolare['id']).execute()
-            print(f"      ✅ Rimossa circolare: {titolo[:50]}...")
-        except Exception as e:
-            print(f"      ⚠️  Errore eliminazione circolare {titolo}: {e}")
+            giorno, mese, anno = map(int, match)
+            # Validazione base
+            if 1 <= giorno <= 31 and 1 <= mese <= 12 and anno >= 2020:
+                return datetime(anno, mese, giorno)
+        except:
+            continue
     
-    print(f"   🎉 Pulizia completata.")
+    return None
+
+def salva_circolare_db(titolo, contenuto, data_pubblica, pdf_url=""):
+    """Salva una circolare nel database PostgreSQL"""
+    try:
+        # Prima controlla se esiste già
+        cur.execute(
+            "SELECT id FROM circolari WHERE titolo = %s AND data_pubblica = %s",
+            (titolo, data_pubblica)
+        )
+        if cur.fetchone():
+            print("   💤 Già presente nel database")
+            return False
+        
+        # Inserisci nuova circolare
+        cur.execute(
+            """INSERT INTO circolari (titolo, contenuto, data_pubblica, pdf_url, created_at)
+               VALUES (%s, %s, %s, %s, NOW())""",
+            (titolo, contenuto, data_pubblica, pdf_url)
+        )
+        conn.commit()
+        print("   ✅ Salvata nel database PostgreSQL")
+        return True
+    except Exception as e:
+        print(f"   ❌ Errore salvataggio database: {e}")
+        conn.rollback()
+        return False
+
+def pulisci_circolari_vecchie():
+    """Rimuove le circolari più vecchie di 30 giorni"""
+    print("🧹 Pulizia circolari vecchie (>30 giorni)...")
+    try:
+        data_limite = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+        cur.execute("DELETE FROM circolari WHERE data_pubblica < %s", (data_limite,))
+        conn.commit()
+        print("   ✅ Pulizia completata")
+    except Exception as e:
+        print(f"   ⚠️  Errore pulizia: {e}")
+
+# ==============================================================================
+# LOGICA PRINCIPALE
+# ==============================================================================
 
 try:
-    # --- PULIZIA INIZIALE DELLE CIRCOLARI VECCHIE ---
-    rimuovi_circolari_vecchie()
+    # --- PULIZIA INIZIALE ---
+    pulisci_circolari_vecchie()
     
-    # --- LOGIN ---
-    print("🌍 Login...")
+    # --- LOGIN SEMPLICE ---
+    print("🌍 Login su Argo...")
     driver.get("https://www.portaleargo.it/famiglia")
+    time.sleep(3)
     
-    # Attendi e compila i campi di login
-    wait.until(EC.presence_of_element_located((By.ID, "username")))
-    username = driver.find_element(By.ID, "username")
-    password = driver.find_element(By.ID, "password")
+    # Compila login
+    driver.find_element(By.ID, "username").send_keys(config['ARGO_USER'])
+    driver.find_element(By.ID, "password").send_keys(config['ARGO_PASS'])
+    driver.find_element(By.ID, "login-button").click()
     
-    username.send_keys(config['ARGO_USER'])
-    password.send_keys(config['ARGO_PASS'])
-    
-    login_button = driver.find_element(By.ID, "login-button")
-    login_button.click()
-    
-    print("⏳ Attendo Dashboard...")
+    print("⏳ Attendo login...")
     time.sleep(5)
     
-    # --- NAVIGAZIONE ALLA BACHECA CIRCOLARI ---
-    print("👉 Vado alle Circolari...")
+    # --- VAI ALLE CIRCOLARI ---
+    print("👉 Navigo alle Circolari...")
+    
+    # Cerca il link "Circolari" - APPROCCIO DIRETTO
     try:
-        # Prima prova con il link "Circolari"
-        circolari_link = wait.until(
-            EC.element_to_be_clickable((By.LINK_TEXT, "Circolari"))
-        )
+        # Prima prova con link esatto
+        circolari_link = driver.find_element(By.LINK_TEXT, "Circolari")
         circolari_link.click()
     except:
-        # Se non trova "Circolari", prova con "Bacheca"
+        # Se non trova, prova con testo parziale
         try:
-            bacheca_link = driver.find_element(By.XPATH, "//*[contains(text(), 'Bacheca')]")
-            bacheca_link.click()
-            time.sleep(2)
-            # Cerca "Circolari" o "Messaggi" nella sottopagina
-            try:
-                circ_sub = driver.find_element(By.XPATH, "//*[contains(text(), 'Circolari')]")
-                circ_sub.click()
-            except:
-                try:
-                    mess_sub = driver.find_element(By.XPATH, "//*[contains(text(), 'Messaggi')]")
-                    mess_sub.click()
-                except:
-                    pass
+            circolari_link = driver.find_element(By.XPATH, "//a[contains(text(), 'Circolari')]")
+            circolari_link.click()
         except:
-            print("⚠️ Non riesco a trovare il link delle circolari")
-            raise
+            # Ultimo tentativo: cerca qualsiasi link che contenga "circolari" (case insensitive)
+            try:
+                links = driver.find_elements(By.TAG_NAME, "a")
+                for link in links:
+                    if 'circolari' in link.text.lower():
+                        link.click()
+                        break
+            except:
+                print("❌ Non trovo il link delle circolari")
+                # Fa screenshot per debug
+                driver.save_screenshot("errore_circolari.png")
+                print("📸 Screenshot salvato come 'errore_circolari.png'")
+                exit(1)
     
-    print("⏳ Caricamento tabella circolari...")
+    print("⏳ Caricamento pagina circolari...")
     time.sleep(8)
     
-    # --- TROVA TUTTE LE RIGHE DELLE CIRCOLARI ---
-    try:
-        # Prova diversi selettori per trovare le righe
-        righe = driver.find_elements(By.CLASS_NAME, "x-grid-row")
-        if not righe:
-            # Prova altri selettori comuni
-            righe = driver.find_elements(By.CSS_SELECTOR, "tr, .list-item, .item, .row")
-        
-        numero_totale = len(righe)
-        print(f"✅ Trovate {numero_totale} circolari totali.")
-        
-    except Exception as e:
-        print(f"⚠️ Errore nel trovare le righe: {e}")
-        numero_totale = 0
-        righe = []
+    # --- CERCA LE CIRCOLARI ---
+    print("🔍 Cerco le circolari nella pagina...")
     
-    # --- CICLO PER OGNI CIRCOLARE ---
-    for i in range(numero_totale):
+    # APPROCCIO 1: Cerca righe di tabella
+    righe = driver.find_elements(By.TAG_NAME, "tr")
+    print(f"📊 Trovate {len(righe)} righe di tabella")
+    
+    # Filtra solo righe che sembrano circolari (hanno testo e possibilmente date)
+    circolari_trovate = []
+    for riga in righe:
+        testo = riga.text.strip()
+        if testo and len(testo) > 30:  # Almeno un po' di testo
+            # Cerca indicatori di circolare
+            if any(keyword in testo.lower() for keyword in ['circolare', 'prot.', 'n.', '/202']):
+                circolari_trovate.append(riga)
+    
+    print(f"✅ Identificate {len(circolari_trovate)} possibili circolari")
+    
+    if not circolari_trovate:
+        print("⚠️ Nessuna circolare identificata. Controllo struttura pagina...")
         
-        # 1. RECUPERO DATI DELLA RIGA
+        # Cerca altri elementi che potrebbero essere circolari
+        elementi_testo = driver.find_elements(By.XPATH, "//*[contains(text(), 'CIRCOLARE') or contains(text(), 'Circolare')]")
+        print(f"📝 Elementi con testo 'CIRCOLARE': {len(elementi_testo)}")
+        
+        for elem in elementi_testo[:10]:  # Mostra primi 10
+            print(f"  - {elem.text[:100]}...")
+        
+        exit(1)
+    
+    # --- ELABORA OGNI CIRCOLARE ---
+    print(f"\n🎯 Inizio elaborazione di {len(circolari_trovate)} circolari...")
+    
+    for idx, riga in enumerate(circolari_trovate):
+        print(f"\n{'='*60}")
+        print(f"🔄 [{idx+1}/{len(circolari_trovate)}] Processo circolare...")
+        
         try:
-            # Ricarica le righe per evitare elementi stantii
-            righe_fresche = driver.find_elements(By.CLASS_NAME, "x-grid-row")
-            if not righe_fresche:
-                righe_fresche = driver.find_elements(By.CSS_SELECTOR, "tr, .list-item, .item, .row")
+            # Estrai testo della riga
+            testo_riga = riga.text.strip()
+            print(f"   📄 Testo riga ({len(testo_riga)} caratteri):")
+            print(f"      {testo_riga[:150]}...")
             
-            if i >= len(righe_fresche):
-                break
-                
-            riga_corrente = righe_fresche[i]
-            colonne = riga_corrente.find_elements(By.TAG_NAME, "td")
+            # Dividi in linee
+            linee = testo_riga.split('\n')
             
-            # Se non trova td, prova con altri elementi
-            if not colonne:
-                colonne = riga_corrente.find_elements(By.CSS_SELECTOR, "div, span")
-            
-        except Exception as e:
-            print(f"⚠️ Errore nel recuperare la riga {i}: {e}")
-            driver.refresh()
-            time.sleep(10)
-            continue
-        
-        # Verifica che ci siano abbastanza colonne
-        if len(colonne) < 3:
-            continue
-        
-        # Estrai dati dalle colonne (adatta in base alla struttura effettiva)
-        try:
-            # Colonna 0: Data (es: 05/01/2026)
-            data_str = colonne[0].text.strip()
-            
-            # Colonna 1: Categoria/Tipo
-            categoria = ""
-            if len(colonne) > 1:
-                categoria = colonne[1].text.strip()
-            
-            # Colonna 3: Titolo (o 2 se non c'è categoria)
+            # Estrai titolo (prima linea significativa)
             titolo = ""
-            if len(colonne) > 3:
-                titolo = colonne[3].text.replace("\n", " ").strip()
-            elif len(colonne) > 2:
-                titolo = colonne[2].text.replace("\n", " ").strip()
+            for linea in linee:
+                linea = linea.strip()
+                if linea and len(linea) > 10:
+                    titolo = linea[:200]
+                    break
             
-            # Colonna 4: Allegati (se presente)
-            cella_file = None
-            if len(colonne) > 4:
-                cella_file = colonne[4]
+            if not titolo:
+                titolo = f"Circolare {idx+1}"
             
-        except Exception as e:
-            print(f"⚠️ Errore nell'estrazione dati riga {i}: {e}")
-            continue
-        
-        # ===> FILTRO 30 GIORNI <===
-        try:
-            # Converti la data da stringa a oggetto datetime
-            data_circolare = datetime.strptime(data_str, "%d/%m/%Y")
+            print(f"   📌 Titolo estratto: {titolo[:80]}...")
             
-            # Calcola quanti giorni sono passati
-            giorni_passati = (datetime.now() - data_circolare).days
+            # Cerca data nel testo della riga
+            data_circolare = estrai_data_dal_testo(testo_riga)
             
-            if giorni_passati > 30:
-                print(f"\n⏹️  INCONTRATA CIRCOLARE VECCHIA: {data_str} (Vecchia di {giorni_passati} giorni)")
-                print(f"🛑 Fermo lo scaricamento. Ho elaborato {i} circolari recenti.")
-                # Esci completamente dal ciclo
-                break
-            
-            print(f"\n🔄 Elaboro circolare recente: {data_str} - {titolo[:30]}...")
-
-        except Exception as e:
-            print(f"⚠️ Errore nel parsing della data '{data_str}': {e}")
-            # Se non riesci a parsare la data, salta questa circolare
-            continue
-        
-        # SE SIAMO QUI, LA CIRCOLARE È RECENTE (<30 giorni) -> PROCEDIAMO
-        
-        ha_allegati = False
-        public_links_string = ""
-        
-        # Controlla se ci sono allegati
-        if cella_file and (cella_file.text.strip() != "" or len(cella_file.find_elements(By.TAG_NAME, "div")) > 0):
-            ha_allegati = True
-        
-        # GESTIONE ALLEGATI
-        if ha_allegati:
-            print("   📎 Scarico allegati...")
-            try:
-                # Clicca sulla cella degli allegati
-                cella_file.click()
-                time.sleep(2)
+            if data_circolare:
+                print(f"   📅 Data trovata nel testo: {data_circolare.strftime('%d/%m/%Y')}")
                 
-                # Prova a cliccare su eventuali div interni
+                # FILTRO 30 GIORNI
+                giorni_passati = (datetime.now() - data_circolare).days
+                if giorni_passati > 30:
+                    print(f"⏹️  CIRCOLARE VECCHIA: {giorni_passati} giorni")
+                    print(f"🛑 Fermo elaborazione.")
+                    break
+                
+                print(f"   ✅ Circolare recente ({giorni_passati} giorni fa)")
+                
+                # CLICCA PER VEDERE IL CONTENUTO COMPLETO
+                print("   🔍 Apro per contenuto completo...")
+                contenuto_completo = ""
+                
                 try:
-                    cella_file.find_element(By.TAG_NAME, "div").click()
-                except:
-                    pass
-                
-                time.sleep(4)
-                
-                # Cerca link PDF
-                links_pdf = driver.find_elements(By.PARTIAL_LINK_TEXT, ".pdf")
-                lista_url_pubblici = []
-                
-                for index_file, link in enumerate(links_pdf):
-                    print(f"      ⬇️ Download allegato {index_file+1}...")
+                    # Salva URL corrente
+                    url_corrente = driver.current_url
                     
-                    # Clicca sul link per avviare il download
-                    link.click()
+                    # Clicca sulla riga
+                    riga.click()
+                    time.sleep(4)
                     
-                    # Attendi il download
-                    file_scaricato = attendi_e_trova_file()
+                    # Estrai tutto il testo della pagina
+                    try:
+                        body = driver.find_element(By.TAG_NAME, "body")
+                        contenuto_completo = body.text
+                        
+                        # Cerca la data anche nel contenuto completo
+                        data_dal_contenuto = estrai_data_dal_testo(contenuto_completo)
+                        if data_dal_contenuto:
+                            print(f"   📅 Data dal contenuto: {data_dal_contenuto.strftime('%d/%m/%Y')}")
+                            data_circolare = data_dal_contenuto  # Usa la data più precisa
+                    except Exception as e:
+                        print(f"   ⚠️  Errore estrazione contenuto: {e}")
                     
-                    if file_scaricato:
-                        # Carica su Supabase Storage
-                        nome_semplice = f"circolare_{data_str.replace('/', '_')}_{index_file + 1}.pdf"
-                        nome_unico = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{nome_semplice}"
-                        
-                        with open(file_scaricato, "rb") as f:
-                            print("      ⬆️ Upload su Cloud...")
-                            supabase.storage.from_("documenti").upload(
-                                path=nome_unico,
-                                file=f,
-                                file_options={"content-type": "application/pdf"}
-                            )
-                        
-                        # Ottieni URL pubblico
-                        url_pubblico = supabase.storage.from_("documenti").get_public_url(nome_unico)
-                        lista_url_pubblici.append(url_pubblico)
-                        
-                        # Chiudi il file e rimuovilo dal disco
-                        f.close()
-                        os.remove(file_scaricato)
-                        print(f"      ✅ Allegato {index_file+1} caricato: {nome_unico}")
-                
-                public_links_string = ";;;".join(lista_url_pubblici)
-                
-                # TORNA ALLA LISTA DELLE CIRCOLARI
-                print("   🔙 Torno alla lista delle circolari...")
-                try:
-                    # Prova a tornare indietro
+                    # Torna indietro
                     driver.back()
                     time.sleep(3)
                     
-                    # Ricarica la pagina se necessario
-                    wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, "x-grid-row")))
-                    
                 except Exception as e:
-                    print(f"   ⚠️ Errore nel tornare indietro: {e}")
-                    # Se non riesce a tornare, ricarica la pagina
-                    driver.get(driver.current_url)
-                    time.sleep(5)
-
-            except Exception as e:
-                print(f"   ⚠️ Errore nella gestione allegati: {e}")
-                # In caso di errore, continua senza allegati
-                pass
-        
-        # SALVATAGGIO NEL DATABASE
-        try:
-            # Controlla se la circolare esiste già
-            res = supabase.table('circolari').select("*").eq('titolo', titolo).execute()
-            
-            # Formatta la data per il database
-            data_pubblica = data_circolare.strftime("%Y-%m-%d %H:%M:%S")
-            
-            if not res.data:
-                # Inserisci nuova circolare
-                supabase.table('circolari').insert({
-                    "titolo": titolo,
-                    "contenuto": f"Categoria: {categoria} - Data: {data_str}",
-                    "data_pubblica": data_pubblica,
-                    "pdf_url": public_links_string
-                }).execute()
-                print("   ✅ Circolare salvata nel database.")
-            else:
-                # Aggiorna circolare esistente (solo allegati se nuovi)
-                if public_links_string:
-                    supabase.table('circolari').update({"pdf_url": public_links_string}).eq('titolo', titolo).execute()
-                    print("   🔄 Allegati aggiornati.")
+                    print(f"   ⚠️  Errore apertura circolare: {e}")
+                    # Usa il testo della riga come contenuto
+                    contenuto_completo = testo_riga
+                
+                # SALVA NEL DATABASE
+                data_pubblica_db = data_circolare.strftime("%Y-%m-%d %H:%M:%S")
+                
+                if salva_circolare_db(titolo, contenuto_completo, data_pubblica_db):
+                    print(f"   💾 Data pubblicazione: {data_pubblica_db[:10]}")
                 else:
-                    print("   💤 Circolare già presente nel database.")
+                    print("   ⚠️  Saltata (già presente)")
                     
+            else:
+                print("   ⚠️  Data non trovata, salto questa circolare")
+                
         except Exception as e:
-            print(f"   ⚠️ Errore nel salvataggio database: {e}")
+            print(f"   ❌ Errore elaborazione: {e}")
+            continue
     
-    print(f"\n🎉 Elaborazione completata. Circolari elaborate: {min(i, numero_totale)}")
+    print(f"\n{'='*60}")
+    print(f"🎉 ELABORAZIONE COMPLETATA!")
+    print(f"   • Circolari trovate: {len(circolari_trovate)}")
+    print(f"   • Database PostgreSQL aggiornato")
 
 except Exception as e:
-    print(f"❌ ERRORE CRITICO: {e}")
+    print(f"\n❌ ERRORE CRITICO: {e}")
     import traceback
     traceback.print_exc()
+    
+    # Fa screenshot dell'errore
+    try:
+        driver.save_screenshot("errore_finale.png")
+        print("📸 Screenshot errore salvato come 'errore_finale.png'")
+    except:
+        pass
 
 finally:
     # --- PULIZIA FINALE ---
-    print("\n🧹 Pulizia file temporanei...")
-    files = glob.glob(os.path.join(cartella_download, "*"))
-    for f in files:
-        try:
-            os.remove(f)
-        except:
-            pass
+    print("\n🧹 Pulizia finale...")
     
-    # Rimuovi la cartella se è vuota
+    # Chiudi database
     try:
-        if not os.listdir(cartella_download):
-            os.rmdir(cartella_download)
+        cur.close()
+        conn.close()
+        print("   🔒 Connessione database chiusa")
     except:
         pass
     
-    print("🔒 Chiusura browser...")
+    # Chiudi browser
     try:
         driver.quit()
+        print("   🔒 Browser chiuso")
+    except:
+        pass
+    
+    # Pulisci cartella download
+    try:
+        files = glob.glob(os.path.join(cartella_download, "*"))
+        for f in files:
+            try:
+                os.remove(f)
+            except:
+                pass
+        if os.path.exists(cartella_download):
+            os.rmdir(cartella_download)
+        print("   🗑️  Cartella temporanea pulita")
     except:
         pass
 
-print("✅ Robot completato con successo!")
+print("\n✅ Robot completato con successo!")
