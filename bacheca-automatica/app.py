@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 import urllib.parse
 import os
 import re
-import pytz
 
 # Importa configurazione se disponibile
 try:
@@ -16,6 +15,7 @@ try:
     APP_NOME = CONFIG['APP_NOME']
     # Nuova variabile per anni scolastici
     ANNI_SCOLASTICI = CONFIG.get('ANNI_SCOLASTICI', ['2024/25', '2025/26', '2026/27'])
+    ANNO_SCOLASTICO_DEFAULT = CONFIG.get('ANNO_SCOLASTICO_DEFAULT', '2025/26')
 except ImportError:
     # Valori di default se config.py non esiste
     UPDATE_INTERVAL = 30
@@ -23,6 +23,7 @@ except ImportError:
     SCUOLA_NOME = "IC Anna Frank - Agrigento"
     APP_NOME = "Bacheca Circolari"
     ANNI_SCOLASTICI = ['2024/25', '2025/26', '2026/27']
+    ANNO_SCOLASTICO_DEFAULT = '2025/26'
 
 st.set_page_config(
     page_title=APP_NOME,
@@ -32,7 +33,7 @@ st.set_page_config(
 )
 
 # =============================================
-# NUOVI STILI CON COLORI PASTELLO (dallo screenshot 3.png)
+# NUOVI STILI CON COLORI PASTELLO
 # =============================================
 st.markdown("""
     <style>
@@ -435,8 +436,8 @@ if 'search_query' not in st.session_state:
     st.session_state.search_query = ""
 
 if 'anno_scolastico_selezionato' not in st.session_state:
-    # Default: anno corrente 2025/26
-    st.session_state.anno_scolastico_selezionato = '2025/26'
+    # Default: anno configurato
+    st.session_state.anno_scolastico_selezionato = ANNO_SCOLASTICO_DEFAULT
 
 # =============================================
 # CONTENITORE SUPERIORE CON CONTROLLI
@@ -447,6 +448,12 @@ st.markdown('<div class="top-container">', unsafe_allow_html=True)
 tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
 tempo_rimanente = max(0, UPDATE_INTERVAL - int(tempo_trascorso))
 
+# Crea opzioni per il dropdown anni scolastici
+anno_options_html = ""
+for anno in ANNI_SCOLASTICI:
+    selected = "selected" if st.session_state.anno_scolastico_selezionato == anno else ""
+    anno_options_html += f'<option value="{anno}" {selected}>{anno}</option>'
+
 st.markdown(f"""
 <div class="update-info-row">
     <div class="update-info">
@@ -456,9 +463,7 @@ st.markdown(f"""
     <div class="anno-scolastico-container">
         <span class="anno-label">Anno Scolastico:</span>
         <select id="annoSelect" class="anno-select" onchange="cambiaAnnoScolastico()">
-            <option value="2024/25" {"selected" if st.session_state.anno_scolastico_selezionato == "2024/25" else ""}>2024/25</option>
-            <option value="2025/26" {"selected" if st.session_state.anno_scolastico_selezionato == "2025/26" else ""}>2025/26</option>
-            <option value="2026/27" {"selected" if st.session_state.anno_scolastico_selezionato == "2026/27" else ""}>2026/27</option>
+            {anno_options_html}
         </select>
     </div>
 </div>
@@ -594,13 +599,6 @@ if supabase:
             df['data_pubblicazione'] = df['data_pubblicazione'].apply(
                 lambda x: normalize_date(x) if pd.notna(x) else datetime.now(timezone.utc)
             )
-            
-            # DEBUG: Visualizza il range dell'anno scolastico e alcune date
-            # st.info(f"Anno scolastico: {st.session_state.anno_scolastico_selezionato}")
-            # st.info(f"Periodo: {data_inizio_anno.strftime('%d/%m/%Y')} - {data_fine_anno.strftime('%d/%m/%Y')}")
-            # if len(df) > 0:
-            #     st.info(f"Prima circolare: {df['data_pubblicazione'].iloc[0]}")
-            #     st.info(f"Ultima circolare: {df['data_pubblicazione'].iloc[-1]}")
             
             # FILTRO ANNO SCOLASTICO: mantieni solo circolari tra 1 settembre e 31 agosto
             # Tutte le date ora sono in UTC
