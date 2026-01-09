@@ -72,8 +72,7 @@ try:
             match = re.search(r'(\d{2})/(\d{2})/(\d{4})', data_testo)
             if match:
                 giorno, mese, anno = match.groups()
-                # CORREZIONE IMPORTANTE: Usa 'data_publicazione' (con una b) come nel database
-                data_publicazione = f"{anno}-{mese}-{giorno} 00:00:00"
+                data_pubblica = f"{anno}-{mese}-{giorno} 00:00:00"
                 data_obj = datetime(int(anno), int(mese), int(giorno))
                 
                 if data_obj >= limite_30_giorni:
@@ -84,12 +83,12 @@ try:
                     all_circolari.append({
                         'titolo': titolo,
                         'contenuto': "",
-                        # CORREZIONE: 'data_publicazione' con una b (come nel database)
-                        'data_publicazione': data_publicazione,
+                        # CORREZIONE FINALE: 'data_pubblica' (senza "zione")
+                        'data_pubblica': data_pubblica,
                         'pdf_url': ';;;'.join(pdf_urls) if pdf_urls else None
                     })
             else:
-                data_publicazione = oggi.strftime("%Y-%m-%d %H:%M:%S")
+                data_pubblica = oggi.strftime("%Y-%m-%d %H:%M:%S")
                 
                 pdf_urls = []
                 if link and link.endswith('.pdf'):
@@ -98,8 +97,8 @@ try:
                 all_circolari.append({
                     'titolo': titolo,
                     'contenuto': "",
-                    # CORREZIONE: 'data_publicazione' con una b
-                    'data_publicazione': data_publicazione,
+                    # CORREZIONE FINALE: 'data_pubblica' (senza "zione")
+                    'data_pubblica': data_pubblica,
                     'pdf_url': ';;;'.join(pdf_urls) if pdf_urls else None
                 })
                 
@@ -109,8 +108,8 @@ try:
     
     print(f"Trovate {len(all_circolari)} circolari (ultimi 30 giorni)")
     
-    # CORREZIONE: Cerca 'data_publicazione' non 'data_pubblicazione'
-    existing_response = supabase.table('circolari').select("titolo, data_publicazione").execute()
+    # CORREZIONE: Cerca 'data_pubblica'
+    existing_response = supabase.table('circolari').select("titolo, data_pubblica").execute()
     
     nuove_circolari = []
     for circ in all_circolari:
@@ -129,11 +128,11 @@ try:
     else:
         print("Nessuna nuova circolare trovata")
     
-    # CORREZIONE: Usa 'data_publicazione' anche qui
+    # CORREZIONE: Usa 'data_pubblica'
     for existing in existing_response.data:
         try:
-            if 'data_publicazione' in existing:
-                data_existing = datetime.strptime(existing['data_publicazione'], "%Y-%m-%d %H:%M:%S")
+            if 'data_pubblica' in existing:
+                data_existing = datetime.strptime(existing['data_pubblica'], "%Y-%m-%d %H:%M:%S")
                 if data_existing < limite_30_giorni:
                     supabase.table('circolari').delete().eq('titolo', existing['titolo']).execute()
                     print(f"Eliminata circolare vecchia: {existing['titolo']}")
