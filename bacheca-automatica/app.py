@@ -321,23 +321,38 @@ if supabase:
         oggi = datetime.now(timezone.utc)
         limite_data = oggi - timedelta(days=CIRCOLARI_VALIDITA_GIORNI)
         
-        # CORREZIONE FINALE: usa 'data_pubblica' (come nel database)
+        # MODIFICA CRITICA: SENZA FILTRO DATA - prende TUTTE le circolari
         response = supabase.table('circolari')\
             .select("*")\
-            .gte('data_pubblica', limite_data.isoformat())\
             .execute()
         
         df = pd.DataFrame(response.data)
         
+        # DEBUG: mostra le colonne disponibili
+        st.info(f"📊 Colonne trovate nel database: {', '.join(df.columns.tolist())}")
+        
         if not df.empty:
-            # CORREZIONE: Cerca 'data_pubblica' e convertila
-            if 'data_pubblica' in df.columns:
-                df['data_pubblicazione'] = pd.to_datetime(df['data_pubblica'])
+            # CERCA la colonna data con vari nomi possibili
+            colonna_data = None
+            possibili_nomi = ['data_pubblicazione', 'data_publicazione', 'data_pubblica', 'data']
+            
+            for nome in possibili_nomi:
+                if nome in df.columns:
+                    colonna_data = nome
+                    st.success(f"✅ Trovata colonna data: '{colonna_data}'")
+                    break
+            
+            if colonna_data:
+                df['data_pubblicazione'] = pd.to_datetime(df[colonna_data])
             else:
-                st.error("❌ Colonna 'data_pubblica' non trovata nel database")
+                st.error("❌ Nessuna colonna data trovata nel database!")
+                st.write("Colonne disponibili:", df.columns.tolist())
                 st.stop()
             
             df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
+            
+            # FILTRA manualmente le ultime 30 giorni (in Python invece che in SQL)
+            df = df[df['data_pubblicazione'] >= limite_data]
             
             if st.session_state.search_query:
                 query = st.session_state.search_query.lower()
@@ -362,55 +377,58 @@ if supabase:
             else:
                 df_display = df
             
-            df_display = df_display.sort_values('numero_circolare', ascending=False)
-            
-            for idx, row in df_display.iterrows():
-                data_pub = row['data_pubblicazione']
-                is_new = (oggi - data_pub).days < 7
+            if not df_display.empty:
+                df_display = df_display.sort_values('numero_circolare', ascending=False)
                 
-                data_pub_safe = safe_convert_to_local_date(data_pub)
-                
-                badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
-                
-                numero_html = ""
-                if row['numero_circolare'] > 0:
-                    numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
-                
-                titolo_pulito = str(row['titolo']).strip()
-                
-                card_html = f'''
-                <div class="circolare-card">
-                    <div class="circolare-header">
-                        {numero_html}
-                        <span class="circolare-date">📅 Pubblicata il {data_pub_safe.strftime('%d/%m/%Y')}</span>
-                    </div>
-                    <div class="circolare-title">
-                        {titolo_pulito} {badge_html}
-                    </div>
-                '''
-                
-                if 'pdf_url' in row and pd.notna(row['pdf_url']) and str(row['pdf_url']).strip():
-                    urls = str(row['pdf_url']).split(';;;')
-                    valid_urls = [url.strip() for url in urls if url.strip()]
+                for idx, row in df_display.iterrows():
+                    data_pub = row['data_pubblicazione']
+                    is_new = (oggi - data_pub).days < 7
                     
-                    if valid_urls:
-                        card_html += '<div class="doc-buttons-container">'
+                    data_pub_safe = safe_convert_to_local_date(data_pub)
+                    
+                    badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
+                    
+                    numero_html = ""
+                    if row['numero_circolare'] > 0:
+                        numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
+                    
+                    titolo_pulito = str(row['titolo']).strip()
+                    
+                    card_html = f'''
+                    <div class="circolare-card">
+                        <div class="circolare-header">
+                            {numero_html}
+                            <span class="circolare-date">📅 Pubblicata il {data_pub_safe.strftime('%d/%m/%Y')}</span>
+                        </div>
+                        <div class="circolare-title">
+                            {titolo_pulito} {badge_html}
+                        </div>
+                    '''
+                    
+                    if 'pdf_url' in row and pd.notna(row['pdf_url']) and str(row['pdf_url']).strip():
+                        urls = str(row['pdf_url']).split(';;;')
+                        valid_urls = [url.strip() for url in urls if url.strip()]
                         
-                        for i, url in enumerate(valid_urls):
-                            base = os.environ.get("SUPABASE_URL", "").rstrip('/')
-                            if url and not url.startswith('http'):
-                                url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
+                        if valid_urls:
+                            card_html += '<div class="doc-buttons-container">'
                             
-                            if url:
-                                card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
-                        
-                        card_html += '</div>'
-                
-                card_html += '</div>'
-                st.markdown(card_html, unsafe_allow_html=True)
+                            for i, url in enumerate(valid_urls):
+                                base = os.environ.get("SUPABASE_URL", "").rstrip('/')
+                                if url and not url.startswith('http'):
+                                    url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
+                                
+                                if url:
+                                    card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
+                            
+                            card_html += '</div>'
+                    
+                    card_html += '</div>'
+                    st.markdown(card_html, unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="empty-state">📭 Nessuna circolare presente negli ultimi {CIRCOLARI_VALIDITA_GIORNI} giorni</div>', unsafe_allow_html=True)
         
         else:
-            st.markdown(f'<div class="empty-state">📭 Nessuna circolare presente negli ultimi {CIRCOLARI_VALIDITA_GIORNI} giorni</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="empty-state">📭 Nessuna circolare nel database</div>', unsafe_allow_html=True)
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
