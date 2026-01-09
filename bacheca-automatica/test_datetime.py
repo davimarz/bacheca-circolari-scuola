@@ -56,6 +56,27 @@ def test_date_functions():
     print(f"   UTC: {now_utc.strftime('%Y-%m-%d %H:%M')}")
     print(f"   Italia: {date_italy.strftime('%Y-%m-%d %H:%M')}")
     
+    # Test 6: Il problema specifico - replace() su timezone-aware
+    print("\n6. Test problema specifico (replace() su aware):")
+    aware_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    print(f"   Data aware originale: {aware_date}")
+    
+    try:
+        # Questo causa l'errore tz_convert()
+        bad_conversion = aware_date.replace(tzinfo=timezone.utc)
+        print(f"   DOPO replace(tzinfo=...): {bad_conversion}")
+    except Exception as e:
+        print(f"   ❌ Errore con replace(): {type(e).__name__}: {e}")
+    
+    # Soluzione corretta
+    print(f"\n   Soluzione corretta (astimezone()):")
+    try:
+        correct_conversion = aware_date.astimezone()
+        print(f"   DOPO astimezone(): {correct_conversion}")
+        print(f"   ✅ Funziona correttamente!")
+    except Exception as e:
+        print(f"   ❌ Errore con astimezone(): {type(e).__name__}: {e}")
+    
     print("\n" + "=" * 50)
     print("✅ Tutti i test completati!")
 
