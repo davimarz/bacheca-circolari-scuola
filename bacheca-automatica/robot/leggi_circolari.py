@@ -16,10 +16,10 @@ from supabase import create_client
 # 🛑 CONFIGURAZIONE
 # ==============================================================================
 ARGO_USER = "davide.marziano.sc26953"
-ARGO_PASS = "SCRIVI_QUI_LA_TUA_PASSWORD_ARGO" 
+ARGO_PASS = "dvd2Frank." 
 
-SUPABASE_URL = "INCOLLA_QUI_IL_LINK_URL_DI_SUPABASE" 
-SUPABASE_KEY = "INCOLLA_QUI_LA_CHIAVE_LUNGA_DI_SUPABASE"
+SUPABASE_URL = "https://ojnofjebrlwrlowovvjd.supabase.co" 
+SUPABASE_KEY = "sb_publishable_uXCA_4jkxA2qSB7Mik3j1A_uo7b6eLq"
 # ==============================================================================
 
 # --- PREPARAZIONE CARTELLA TEMPORANEA ---
