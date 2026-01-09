@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import urllib.parse
 import os
 import re
+import pytz
 
 # Importa configurazione se disponibile
 try:
@@ -337,13 +338,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================
-# FUNZIONI UTILI
+# FUNZIONI UTILI - CORRETTE PER TIMEZONE
 # =============================================
 
 def get_anno_scolastico_dates(anno_scolastico):
     """
     Restituisce le date di inizio e fine per un anno scolastico.
     Formato anno_scolastico: '2024/25'
+    Ritorna date con timezone UTC per compatibilità
     """
     try:
         anno_inizio = int(anno_scolastico.split('/')[0])
@@ -351,13 +353,40 @@ def get_anno_scolastico_dates(anno_scolastico):
         data_inizio = datetime(anno_inizio, 9, 1)
         # Fine: 31 agosto dell'anno successivo (anno_inizio + 1)
         data_fine = datetime(anno_inizio + 1, 8, 31)
-        return data_inizio, data_fine
+        
+        # Converti in UTC timezone per compatibilità
+        data_inizio_utc = data_inizio.replace(tzinfo=timezone.utc)
+        data_fine_utc = data_fine.replace(tzinfo=timezone.utc)
+        
+        return data_inizio_utc, data_fine_utc
     except:
-        # Fallback: anno corrente
+        # Fallback: anno corrente con UTC
         anno_corrente = datetime.now().year
-        data_inizio = datetime(anno_corrente, 9, 1)
-        data_fine = datetime(anno_corrente + 1, 8, 31)
+        data_inizio = datetime(anno_corrente, 9, 1).replace(tzinfo=timezone.utc)
+        data_fine = datetime(anno_corrente + 1, 8, 31).replace(tzinfo=timezone.utc)
         return data_inizio, data_fine
+
+def normalize_date(date_obj):
+    """
+    Normalizza una data: se ha timezone la converte in UTC, 
+    se non ha timezone le aggiunge UTC
+    """
+    if date_obj is None:
+        return datetime.now(timezone.utc)
+    
+    if hasattr(date_obj, 'tzinfo'):
+        if date_obj.tzinfo is None:
+            # Date naive, aggiungi UTC
+            return date_obj.replace(tzinfo=timezone.utc)
+        else:
+            # Date con timezone, converte in UTC
+            return date_obj.astimezone(timezone.utc)
+    else:
+        # Non è un datetime, prova a convertire
+        try:
+            return pd.to_datetime(date_obj).replace(tzinfo=timezone.utc)
+        except:
+            return datetime.now(timezone.utc)
 
 def extract_circolare_number(titolo):
     if isinstance(titolo, str):
@@ -376,10 +405,12 @@ def safe_convert_to_local_date(timestamp):
     """
     try:
         if hasattr(timestamp, 'strftime'):
-            date_str = timestamp.strftime('%Y-%m-%d')
-            return datetime.strptime(date_str, '%Y-%m-%d')
-        else:
+            # Rimuove timezone per la visualizzazione
+            if hasattr(timestamp, 'tzinfo') and timestamp.tzinfo is not None:
+                timestamp = timestamp.replace(tzinfo=None)
             return timestamp
+        else:
+            return datetime.now()
     except Exception:
         return datetime.now()
 
@@ -434,10 +465,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # Seconda riga: Barra di ricerca
-st.markdown("""
+search_value = st.session_state.search_query if 'search_query' in st.session_state else ""
+st.markdown(f"""
 <div class="search-row">
     <div class="search-container">
-        <input type="text" id="searchInput" class="search-input" placeholder="Cerca per numero o testo..." value="" onkeydown="if(event.keyCode==13) searchCircolari()">
+        <input type="text" id="searchInput" class="search-input" placeholder="Cerca per numero o testo..." value="{search_value}" onkeydown="if(event.keyCode==13) searchCircolari()">
         <button class="search-button" onclick="searchCircolari()">🔍 Cerca</button>
         <button class="clear-search" onclick="clearSearch()">❌ Cancella</button>
     </div>
@@ -456,12 +488,18 @@ function searchCircolari() {
     var query = searchInput.value;
     
     if (query.trim() !== '') {
-        window.location.href = window.location.pathname + '?search=' + encodeURIComponent(query);
+        // Mantieni anche l'anno scolastico nell'URL
+        var currentUrl = new URL(window.location);
+        currentUrl.searchParams.set('search', query);
+        window.location.href = currentUrl.toString();
     }
 }
 
 function clearSearch() {
-    window.location.href = window.location.pathname;
+    // Rimuovi solo il parametro search, mantieni anno scolastico
+    var currentUrl = new URL(window.location);
+    currentUrl.searchParams.delete('search');
+    window.location.href = currentUrl.toString();
 }
 
 function cambiaAnnoScolastico() {
@@ -471,6 +509,8 @@ function cambiaAnnoScolastico() {
     // Aggiungi l'anno scolastico come parametro URL
     var url = new URL(window.location);
     url.searchParams.set('anno', annoSelezionato);
+    // Rimuovi la ricerca quando cambi anno
+    url.searchParams.delete('search');
     window.location.href = url.toString();
 }
 </script>
@@ -492,7 +532,7 @@ if 'search' in query_params:
     st.session_state.search_query = query_params['search']
 
 # =============================================
-# CONNESSIONE AL DATABASE E FILTRI
+# CONNESSIONE AL DATABASE E FILTRI - VERSIONE CORRETTA
 # =============================================
 @st.cache_resource
 def init_supabase():
@@ -517,16 +557,12 @@ supabase = init_supabase()
 
 if supabase:
     try:
-        # Ottieni date per l'anno scolastico selezionato
+        # Ottieni date per l'anno scolastico selezionato (in UTC)
         data_inizio_anno, data_fine_anno = get_anno_scolastico_dates(
             st.session_state.anno_scolastico_selezionato
         )
         
-        # Debug (opzionale)
-        # st.info(f"Anno scolastico: {st.session_state.anno_scolastico_selezionato}")
-        # st.info(f"Periodo: {data_inizio_anno.strftime('%d/%m/%Y')} - {data_fine_anno.strftime('%d/%m/%Y')}")
-        
-        # Carica TUTTE le circolari (filtro per data applicato dopo)
+        # Carica TUTTE le circolari
         response = supabase.table('circolari')\
             .select("*")\
             .execute()
@@ -544,7 +580,8 @@ if supabase:
                     break
             
             if colonna_data:
-                df['data_pubblicazione'] = pd.to_datetime(df[colonna_data])
+                # Converti in datetime con timezone UTC
+                df['data_pubblicazione'] = pd.to_datetime(df[colonna_data], utc=True)
             else:
                 # Se non trova colonna data, usa oggi come fallback
                 df['data_pubblicazione'] = pd.to_datetime(datetime.now(timezone.utc))
@@ -552,11 +589,25 @@ if supabase:
             # Estrai numero circolare
             df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
             
+            # CORREZIONE CRITICA: Normalizza tutte le date in UTC
+            # Assicurati che tutte le date in df siano in UTC
+            df['data_pubblicazione'] = df['data_pubblicazione'].apply(
+                lambda x: normalize_date(x) if pd.notna(x) else datetime.now(timezone.utc)
+            )
+            
+            # DEBUG: Visualizza il range dell'anno scolastico e alcune date
+            # st.info(f"Anno scolastico: {st.session_state.anno_scolastico_selezionato}")
+            # st.info(f"Periodo: {data_inizio_anno.strftime('%d/%m/%Y')} - {data_fine_anno.strftime('%d/%m/%Y')}")
+            # if len(df) > 0:
+            #     st.info(f"Prima circolare: {df['data_pubblicazione'].iloc[0]}")
+            #     st.info(f"Ultima circolare: {df['data_pubblicazione'].iloc[-1]}")
+            
             # FILTRO ANNO SCOLASTICO: mantieni solo circolari tra 1 settembre e 31 agosto
-            df = df[
+            # Tutte le date ora sono in UTC
+            df_filtered_by_year = df[
                 (df['data_pubblicazione'] >= data_inizio_anno) & 
                 (df['data_pubblicazione'] <= data_fine_anno)
-            ]
+            ].copy()
             
             # FILTRO RICERCA
             if st.session_state.search_query:
@@ -571,16 +622,16 @@ if supabase:
                     else:
                         return query in titolo
                 
-                df_filtered = df[df.apply(matches_search, axis=1)]
+                df_filtered = df_filtered_by_year[df_filtered_by_year.apply(matches_search, axis=1)]
                 
                 if df_filtered.empty:
                     st.info(f"🔍 Nessuna circolare trovata per: '{st.session_state.search_query}'")
-                    df_display = df
+                    df_display = df_filtered_by_year
                 else:
                     st.info(f"🔍 Risultati per: '{st.session_state.search_query}' ({len(df_filtered)} circolari trovate)")
                     df_display = df_filtered
             else:
-                df_display = df
+                df_display = df_filtered_by_year
             
             # VISUALIZZAZIONE CIRCOLARI
             if not df_display.empty:
@@ -591,12 +642,14 @@ if supabase:
                     oggi_utc = datetime.now(timezone.utc)
                     
                     # Determina se è nuova (< 7 giorni)
+                    # Assicurati che entrambe le date siano in UTC
                     if hasattr(data_pub, 'tzinfo') and data_pub.tzinfo is not None:
-                        is_new = (oggi_utc - data_pub).days < 7
+                        diff_giorni = (oggi_utc - data_pub).days
                     else:
-                        data_pub_naive = pd.to_datetime(data_pub).tz_localize(None)
-                        oggi_naive = datetime.now()
-                        is_new = (oggi_naive - data_pub_naive).days < 7
+                        data_pub_utc = normalize_date(data_pub)
+                        diff_giorni = (oggi_utc - data_pub_utc).days
+                    
+                    is_new = diff_giorni < 7
                     
                     data_pub_safe = safe_convert_to_local_date(data_pub)
                     
