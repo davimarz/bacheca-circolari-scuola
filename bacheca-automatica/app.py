@@ -6,8 +6,22 @@ import urllib.parse
 import os
 import re
 
+# Importa configurazione se disponibile
+try:
+    from config import CONFIG, DATE_FORMATS
+    UPDATE_INTERVAL = CONFIG['UPDATE_INTERVAL']
+    CIRCOLARI_VALIDITA_GIORNI = CONFIG['CIRCOLARI_VALIDITA_GIORNI']
+    SCUOLA_NOME = CONFIG['SCUOLA_NOME']
+    APP_NOME = CONFIG['APP_NOME']
+except ImportError:
+    # Valori di default se config.py non esiste
+    UPDATE_INTERVAL = 30
+    CIRCOLARI_VALIDITA_GIORNI = 30
+    SCUOLA_NOME = "IC Anna Frank - Agrigento"
+    APP_NOME = "Bacheca Circolari"
+
 st.set_page_config(
-    page_title="Bacheca Circolari",
+    page_title=APP_NOME,
     page_icon="🏫",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -206,10 +220,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
+st.markdown(f"""
 <div class="main-header">
-    <div class="main-title">🏫 Bacheca Circolari</div>
-    <div class="school-info">IC Anna Frank - Agrigento</div>
+    <div class="main-title">🏫 {APP_NOME}</div>
+    <div class="school-info">{SCUOLA_NOME}</div>
     <div class="author-info">realizzato da: Davide prof. Marziano</div>
 </div>
 """, unsafe_allow_html=True)
@@ -251,7 +265,7 @@ if 'search_query' not in st.session_state:
     st.session_state.search_query = ""
 
 tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
-tempo_rimanente = max(0, 30 - int(tempo_trascorso))
+tempo_rimanente = max(0, UPDATE_INTERVAL - int(tempo_trascorso))
 
 st.markdown(f"""
 <div class="update-info">
@@ -292,7 +306,7 @@ supabase = init_supabase()
 if supabase:
     try:
         oggi = datetime.now(timezone.utc)
-        limite_data = oggi - timedelta(days=30)
+        limite_data = oggi - timedelta(days=CIRCOLARI_VALIDITA_GIORNI)
         
         response = supabase.table('circolari')\
             .select("*")\
@@ -334,8 +348,7 @@ if supabase:
                 data_pub = row['data_pubblicazione']
                 is_new = (oggi - data_pub).days < 7
                 
-                # CORREZIONE: Usare astimezone() direttamente, senza replace()
-                # data_pub è già timezone-aware (UTC) grazie a pd.to_datetime(..., utc=True)
+                # CORREZIONE: Usare astimezone() direttamente senza replace()
                 data_pub_local = data_pub.astimezone()
                 
                 badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
@@ -377,18 +390,20 @@ if supabase:
                 st.markdown(card_html, unsafe_allow_html=True)
         
         else:
-            st.markdown('<div class="empty-state">📭 Nessuna circolare presente negli ultimi 30 giorni</div>', unsafe_allow_html=True)
+            st.markdown('<div class="empty-state">📭 Nessuna circolare presente negli ultimi {CIRCOLARI_VALIDITA_GIORNI} giorni</div>', unsafe_allow_html=True)
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
-        # Per debugging
         st.error(f"Tipo di errore: {type(e).__name__}")
+        # Per debugging dettagliato
+        import traceback
+        st.code(traceback.format_exc())
 else:
     st.warning("⚠️ Impossibile connettersi al database.")
 
-st.markdown("""
+st.markdown(f"""
 <div style="text-align: center; margin-top: 3rem; padding: 1rem; color: #7f8c8d; font-size: 0.8rem;">
     <hr style="border: none; height: 1px; background-color: #bdc3c7; margin: 1rem 0;">
-    Bacheca Circolari IC Anna Frank - Agrigento
+    {APP_NOME} - {SCUOLA_NOME}
 </div>
 """, unsafe_allow_html=True)
