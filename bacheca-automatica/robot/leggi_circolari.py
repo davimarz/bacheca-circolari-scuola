@@ -74,26 +74,37 @@ def attendi_e_trova_file():
         timer += 1
     return None
 
-def estrai_data_da_contenuto(contenuto):
-    """Estrae la data di pubblicazione dal contenuto della circolare"""
-    if not contenuto:
+def estrai_data_dal_testo(testo):
+    """Estrae la data di pubblicazione dal testo della circolare"""
+    if not testo:
         return None
     
-    # Cerca diversi formati di data nel contenuto
+    # Cerca diversi pattern di data nel testo
     pattern_data = [
-        r'Data\s*[:\-]?\s*(\d{2})/(\d{2})/(\d{4})',  # Data: 25/10/2024 o Data 25/10/2024
-        r'Pubblicato\s*il\s*(\d{2})/(\d{2})/(\d{4})',  # Pubblicato il 25/10/2024
-        r'(\d{2})/(\d{2})/(\d{4})',  # 25/10/2024 (formato generico)
-        r'Del\s*(\d{2})/(\d{2})/(\d{4})',  # Del 25/10/2024
-        r'In\s*data\s*(\d{2})/(\d{2})/(\d{4})',  # In data 25/10/2024
+        # Pattern più comune: "Data: 25/10/2024" o "Data 25/10/2024"
+        r'Data\s*[:\-]?\s*(\d{2})/(\d{2})/(\d{4})',
+        
+        # "Pubblicato il 25/10/2024"
+        r'Pubblicato\s*(?:il)?\s*(\d{2})/(\d{2})/(\d{4})',
+        
+        # "Del 25/10/2024"
+        r'Del\s*(\d{2})/(\d{2})/(\d{4})',
+        
+        # "In data 25/10/2024"
+        r'In\s*data\s*(\d{2})/(\d{2})/(\d{4})',
+        
+        # Formato standard 25/10/2024 (cerca le prime occorrenze)
+        r'(\d{2})/(\d{2})/(\d{4})',
     ]
     
     for pattern in pattern_data:
-        match = re.search(pattern, contenuto, re.IGNORECASE)
+        match = re.search(pattern, testo, re.IGNORECASE)
         if match:
             try:
                 giorno, mese, anno = map(int, match.groups())
-                return datetime(anno, mese, giorno)
+                # Validazione base della data
+                if 1 <= giorno <= 31 and 1 <= mese <= 12 and anno >= 2020:
+                    return datetime(anno, mese, giorno)
             except:
                 continue
     
@@ -114,14 +125,16 @@ def aggiorna_date_dal_contenuto():
     
     for circolare in res.data:
         contenuto = circolare.get('contenuto', '')
-        data_attuale = circolare.get('data_pubblica', '')
+        if not contenuto:
+            continue
         
         # Estrai la data dal contenuto
-        data_dal_contenuto = estrai_data_da_contenuto(contenuto)
+        data_dal_contenuto = estrai_data_dal_testo(contenuto)
         
         if data_dal_contenuto:
             # Formatta la data per il database
             nuova_data = data_dal_contenuto.strftime("%Y-%m-%d %H:%M:%S")
+            data_attuale = circolare.get('data_pubblica', '')
             
             # Se la data è diversa da quella attuale, aggiorna
             if nuova_data != data_attuale:
@@ -142,9 +155,9 @@ def aggiorna_date_dal_contenuto():
                     'data_pubblica': circ['nuova_data']
                 }).eq('id', circ['id']).execute()
                 
-                print(f"      ✅ Aggiornata '{circ['titolo'][:50]}...'")
-                print(f"         Da: {circ['vecchia_data']}")
-                print(f"         A:  {circ['nuova_data']}")
+                print(f"      ✅ '{circ['titolo'][:50]}...'")
+                print(f"         Da: {circ['vecchia_data'][:10] if circ['vecchia_data'] else 'Nessuna'}")
+                print(f"         A:  {circ['nuova_data'][:10]}")
             except Exception as e:
                 print(f"      ⚠️  Errore aggiornamento {circ['titolo'][:50]}...: {e}")
     else:
@@ -165,9 +178,11 @@ def rimuovi_circolari_vecchie():
     
     for circolare in res.data:
         contenuto = circolare.get('contenuto', '')
+        if not contenuto:
+            continue
         
         # Estrai la data dal contenuto
-        data_circolare = estrai_data_da_contenuto(contenuto)
+        data_circolare = estrai_data_dal_testo(contenuto)
         
         if data_circolare:
             # Calcola quanti giorni sono passati
@@ -212,19 +227,11 @@ def rimuovi_circolari_vecchie():
         # Elimina la circolare dal database
         try:
             supabase.table('circolari').delete().eq('id', circ['id']).execute()
-            print(f"      ✅ Rimossa circolare: {circ['titolo'][:50]}... ({circ['data']}, {circ['giorni']} giorni)")
+            print(f"      ✅ Rimossa: {circ['titolo'][:50]}... ({circ['data']}, {circ['giorni']} giorni)")
         except Exception as e:
             print(f"      ⚠️  Errore eliminazione circolare {circ['titolo']}: {e}")
     
     print(f"   🎉 Pulizia completata.")
-
-def converti_data_argo(data_str):
-    """Converte la data dal formato Argo (DD/MM/YYYY) a datetime"""
-    try:
-        return datetime.strptime(data_str.strip(), "%d/%m/%Y")
-    except Exception as e:
-        print(f"⚠️ Errore conversione data '{data_str}': {e}")
-        return None
 
 try:
     # --- PRIMA AGGIORNA LE DATE DAL CONTENUTO ---
@@ -298,7 +305,7 @@ try:
     for selector in table_selectors:
         try:
             tabella = driver.find_element(By.CSS_SELECTOR, selector)
-            print(f"✅ Trovata tabella con selettore: {selector}")
+            print(f"✅ Trovata tabella con selettor e: {selector}")
             break
         except:
             continue
@@ -320,9 +327,9 @@ try:
         righe = driver.find_elements(By.CSS_SELECTOR, "tr, .x-grid-row, .list-item")
     
     numero_totale = len(righe)
-    print(f"✅ Trovate {numero_totale} righe di circolari.")
+    print(f"✅ Trovate {numero_totale} circolari.")
     
-    # --- CICLO PER OGNI RIGA/CIRCOLARE ---
+    # --- CICLO PER OGNI CIRCOLARE ---
     circolari_elaborate = 0
     
     for i in range(numero_totale):
@@ -330,7 +337,7 @@ try:
             # Ricarica le righe per evitare elementi stantii
             if tabella:
                 righe_fresche = tabella.find_elements(By.CSS_SELECTOR, "tr")
-                if righe_fresche and ("DATA" in righe_fresche[0].text or "DATA" in righe_fresche[0].get_attribute('innerHTML')):
+                if righe_fresche and ("DATA" in righe_fresche[0].text):
                     righe_fresche = righe_fresche[1:]
             else:
                 righe_fresche = driver.find_elements(By.CSS_SELECTOR, "tr, .x-grid-row, .list-item")
@@ -352,30 +359,28 @@ try:
                 print(f"⚠️ Riga {i+1}: Troppo poche colonne ({len(colonne)}), salto")
                 continue
             
-            # COLONNA 0: DATA VISUALIZZATA (solo per riferimento)
-            data_display = colonne[0].text.strip()
-            
-            # COLONNA 1: CATEGORIA (es: CIRCOLARI INTERNE)
-            categoria = colonne[1].text.strip()
-            
-            # COLONNA 2: NUM. DOC. (di solito vuoto o numero)
-            num_doc = colonne[2].text.strip()
-            
-            # COLONNA 3: MESSAGGIO/TITOLO (es: CIRCOLARE N.160 OGGETTO: ...)
+            # COLONNA 3: TITOLO DELLA CIRCOLARE (es: "CIRCOLARE N.160 OGGETTO: ...")
             titolo = colonne[3].text.strip()
             
             # COLONNA 4: FILE/ALLEGATI
             cella_file = colonne[4]
             
-            # CLICCA SULLA CIRCOLARE PER VEDERE IL CONTENUTO COMPLETO
             print(f"\n🔄 [{i+1}] Apro circolare: {titolo[:80]}...")
             
+            # VARIABILI PER I DATI DA ESTRARRE
+            contenuto_completo = ""
+            data_pubblicazione = None
+            
+            # CLICCA SULLA CIRCOLARE PER VEDERE IL CONTENUTO COMPLETO
             try:
-                # Clicca sulla circolare per aprirla
-                colonne[3].click()  # Clicca sulla colonna del titolo
-                time.sleep(3)
+                # Salva URL corrente per poter tornare
+                url_lista = driver.current_url
                 
-                # Estrai il contenuto completo della circolare
+                # Clicca sulla circolare per aprirla (colonna del titolo)
+                colonne[3].click()
+                time.sleep(4)
+                
+                # Estrai il CONTENUTO COMPLETO della circolare
                 contenuto_selectors = [
                     ".circolare-contenuto",
                     ".contenuto",
@@ -390,83 +395,71 @@ try:
                     "div.x-grid-item-container"
                 ]
                 
-                contenuto_completo = ""
                 for selector in contenuto_selectors:
                     try:
                         elemento = driver.find_element(By.CSS_SELECTOR, selector)
                         contenuto_completo = elemento.text
-                        if contenuto_completo and len(contenuto_completo) > 50:
+                        if contenuto_completo and len(contenuto_completo) > 100:
+                            print(f"   ✅ Contenuto estratto con selettore: {selector}")
                             break
                     except:
                         continue
                 
-                # Se non trova selettori specifici, prova con il body
-                if not contenuto_completo or len(contenuto_completo) < 50:
+                # Se non trova selettori specifici, prova con tutto il body
+                if not contenuto_completo or len(contenuto_completo) < 100:
                     try:
-                        # Cerca il contenuto principale
                         body = driver.find_element(By.TAG_NAME, "body")
                         contenuto_completo = body.text
-                        
-                        # Rimuovi header, footer, menu, etc.
-                        lines = contenuto_completo.split('\n')
-                        # Prendi solo le linee che sembrano contenuto della circolare
-                        filtered_lines = []
-                        in_content = False
-                        for line in lines:
-                            line = line.strip()
-                            if any(keyword in line.lower() for keyword in ['circolare', 'oggetto:', 'prot.', 'n.']):
-                                in_content = True
-                            if in_content and line:
-                                filtered_lines.append(line)
-                        
-                        contenuto_completo = '\n'.join(filtered_lines)
+                        print("   ✅ Contenuto estratto dal body")
                     except:
-                        pass
+                        print("   ⚠️  Non riesco ad estrarre il contenuto")
                 
-                # Estrai la data REALE dal contenuto
-                data_reale = estrai_data_da_contenuto(contenuto_completo)
-                
-                if not data_reale:
-                    print(f"   ⚠️  Data non trovata nel contenuto, uso data display: {data_display}")
-                    data_reale = converti_data_argo(data_display)
-                
-                if not data_reale:
-                    print(f"   ⚠️  Data non valida, salto questa circolare")
-                    driver.back()
-                    time.sleep(3)
-                    continue
+                # ORA ESTRAI LA DATA DI PUBBLICAZIONE DAL CONTENUTO
+                if contenuto_completo:
+                    data_pubblicazione = estrai_data_dal_testo(contenuto_completo)
+                    
+                    if data_pubblicazione:
+                        print(f"   📅 Data pubblicazione estratta dal contenuto: {data_pubblicazione.strftime('%d/%m/%Y')}")
+                    else:
+                        print("   ⚠️  Data non trovata nel contenuto")
+                else:
+                    print("   ⚠️  Nessun contenuto da analizzare")
                 
                 # Torna indietro alla lista
-                driver.back()
-                time.sleep(3)
+                driver.get(url_lista)
+                time.sleep(4)
+                
+                # Ricarica la tabella
+                if tabella:
+                    tabella = driver.find_element(By.CSS_SELECTOR, table_selectors[0])
+                    righe_fresche = tabella.find_elements(By.CSS_SELECTOR, "tr")
+                    if righe_fresche and ("DATA" in righe_fresche[0].text):
+                        righe_fresche = righe_fresche[1:]
                 
             except Exception as e:
-                print(f"   ⚠️  Errore apertura circolare: {e}")
-                # Se non riesce ad aprire, usa la data display
-                data_reale = converti_data_argo(data_display)
-                if not data_reale:
-                    continue
-                # Tenta di tornare indietro
-                try:
-                    driver.back()
-                    time.sleep(3)
-                except:
-                    pass
+                print(f"   ❌ Errore apertura circolare: {e}")
+                # Se c'è errore, ricarica la pagina
+                driver.get(driver.current_url)
+                time.sleep(5)
+                continue
             
-            # ===> FILTRO 30 GIORNI (BASATO SULLA DATA REALE DAL CONTENUTO) <===
-            giorni_passati = (datetime.now() - data_reale).days
+            # ===> FILTRO 30 GIORNI (USANDO LA DATA ESTRATTA DAL CONTENUTO) <===
+            if not data_pubblicazione:
+                print("   ⚠️  Data non estratta, salto questa circolare")
+                continue
+            
+            giorni_passati = (datetime.now() - data_pubblicazione).days
             
             if giorni_passati > 30:
-                print(f"⏹️  INCONTRATA CIRCOLARE VECCHIA: {data_reale.strftime('%d/%m/%Y')} (Vecchia di {giorni_passati} giorni)")
+                print(f"⏹️  INCONTRATA CIRCOLARE VECCHIA: {data_pubblicazione.strftime('%d/%m/%Y')} (Vecchia di {giorni_passati} giorni)")
                 print(f"🛑 Fermo lo scaricamento. Ho elaborato {circolari_elaborate} circolari recenti.")
                 # Esci completamente dal ciclo
                 break
             
-            print(f"   📅 Data reale dal contenuto: {data_reale.strftime('%d/%m/%Y')}")
-            print(f"   📄 Titolo: {titolo[:80]}...")
-            
             # SE SIAMO QUI, LA CIRCOLARE È RECENTE (<30 giorni) -> PROCEDIAMO
             circolari_elaborate += 1
+            
+            print(f"   ✅ Circolare recente ({giorni_passati} giorni)")
             
             # CONTROLLA SE CI SONO ALLEGATI
             ha_allegati = False
@@ -517,7 +510,7 @@ try:
                             
                             if file_scaricato:
                                 # Carica su Supabase Storage
-                                nome_semplice = f"circolare_{data_reale.strftime('%Y%m%d')}_{index_file + 1}.pdf"
+                                nome_semplice = f"circolare_{data_pubblicazione.strftime('%Y%m%d')}_{index_file + 1}.pdf"
                                 nome_unico = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{nome_semplice}"
                                 
                                 with open(file_scaricato, "rb") as f:
@@ -556,23 +549,30 @@ try:
                     except:
                         pass
             
-            # SALVATAGGIO NEL DATABASE (CON DATA REALE DAL CONTENUTO)
+            # SALVATAGGIO NEL DATABASE (CON DATA ESTRATTA DAL CONTENUTO)
             try:
                 # Formatta la data per il database
-                data_pubblica = data_reale.strftime("%Y-%m-%d %H:%M:%S")
+                data_pubblica_db = data_pubblicazione.strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Controlla se la circolare esiste già (per titolo e data REALE)
-                res = supabase.table('circolari').select("*").eq('titolo', titolo).eq('data_pubblica', data_pubblica).execute()
+                # Crea il contenuto per il database
+                if contenuto_completo:
+                    contenuto_db = contenuto_completo
+                else:
+                    contenuto_db = f"Titolo: {titolo}\nData estratta dal contenuto: {data_pubblicazione.strftime('%d/%m/%Y')}"
+                
+                # Controlla se la circolare esiste già (per titolo e data)
+                res = supabase.table('circolari').select("*").eq('titolo', titolo).eq('data_pubblica', data_pubblica_db).execute()
                 
                 if not res.data:
-                    # Inserisci nuova circolare con contenuto completo
+                    # Inserisci nuova circolare
                     supabase.table('circolari').insert({
                         "titolo": titolo,
-                        "contenuto": contenuto_completo if 'contenuto_completo' in locals() else f"Categoria: {categoria} | Data display: {data_display}",
-                        "data_pubblica": data_pubblica,
+                        "contenuto": contenuto_db,
+                        "data_pubblica": data_pubblica_db,
                         "pdf_url": public_links_string
                     }).execute()
-                    print("   ✅ Circolare salvata nel database (con data dal contenuto).")
+                    print("   ✅ Circolare salvata nel database.")
+                    print(f"   📅 Data pubblicazione: {data_pubblica_db[:10]}")
                 else:
                     # Aggiorna circolare esistente (solo allegati se nuovi)
                     if public_links_string and not res.data[0].get('pdf_url'):
@@ -594,7 +594,7 @@ try:
     print(f"\n📊 RIEPILOGO FINALE:")
     print(f"   • Circolari totali trovate in tabella: {numero_totale}")
     print(f"   • Circolari recenti (<30gg) elaborate: {circolari_elaborate}")
-    print(f"   • Date estratte dal contenuto delle circolari")
+    print(f"   • Date estratte dal CONTENUTO delle circolari")
     
     # AGGIORNA NUOVAMENTE LE DATE PER VERIFICA FINALE
     print("\n🔄 Verifica finale date dal contenuto...")
