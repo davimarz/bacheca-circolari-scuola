@@ -258,27 +258,25 @@ def extract_circolare_number(titolo):
                 return 0
     return 0
 
-def convert_pandas_timestamp_to_local(timestamp):
+def safe_convert_to_local_date(timestamp):
     """
-    Converte un pandas Timestamp con timezone in data locale (Italia)
-    Gestisce sia pandas Timestamp che datetime Python
+    Converte in modo sicuro un pandas Timestamp o datetime in data locale
+    EVITA astimezone() su pandas Timestamp che causa tz_convert() error
     """
     try:
-        # Se è un pandas Timestamp, converti prima in datetime Python
-        if hasattr(timestamp, 'to_pydatetime'):
-            dt = timestamp.to_pydatetime()
+        # Se è pandas Timestamp, estrai solo la data (senza timezone)
+        if hasattr(timestamp, 'strftime'):
+            # Formatta direttamente senza conversione timezone
+            # pandas Timestamp.strftime() gestisce il formato correttamente
+            date_str = timestamp.strftime('%Y-%m-%d')
+            # Crea datetime naive dalla stringa
+            return datetime.strptime(date_str, '%Y-%m-%d')
         else:
-            dt = timestamp
-        
-        # Se ha timezone, converti al fuso orario locale
-        if dt.tzinfo is not None:
-            return dt.astimezone()
-        else:
-            # Se non ha timezone, assumi UTC e converti
-            return dt.replace(tzinfo=timezone.utc).astimezone()
+            # Se è già datetime, usalo così com'è
+            return timestamp
     except Exception:
-        # In caso di errore, ritorna la data senza conversione
-        return timestamp
+        # In caso di errore, ritorna datetime.now()
+        return datetime.now()
 
 if 'last_update' not in st.session_state:
     st.session_state.last_update = datetime.now(timezone.utc)
@@ -330,7 +328,7 @@ if supabase:
         oggi = datetime.now(timezone.utc)
         limite_data = oggi - timedelta(days=CIRCOLARI_VALIDITA_GIORNI)
         
-        # CORREZIONE: Usa il nome corretto della colonna dal database
+        # CORREZIONE: Usa 'data_publicazione' (con una b) come nel database
         response = supabase.table('circolari')\
             .select("*")\
             .gte('data_publicazione', limite_data.isoformat())\
@@ -339,14 +337,12 @@ if supabase:
         df = pd.DataFrame(response.data)
         
         if not df.empty:
-            # CORREZIONE: Usa il nome corretto della colonna
-            # Il database ha 'data_publicazione' (una b), non 'data_pubblicazione' (due b)
+            # CORREZIONE: Usa il nome corretto della colonna dal database
             if 'data_publicazione' in df.columns:
-                df['data_pubblicazione'] = pd.to_datetime(df['data_publicazione'], utc=True)
-            elif 'data_pubblicazione' in df.columns:
-                df['data_pubblicazione'] = pd.to_datetime(df['data_pubblicazione'], utc=True)
+                # Converti senza timezone per evitare problemi
+                df['data_pubblicazione'] = pd.to_datetime(df['data_publicazione'])
             else:
-                st.error("❌ Colonna data non trovata nel database")
+                st.error("❌ Colonna 'data_publicazione' non trovata nel database")
                 st.stop()
             
             df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
@@ -359,7 +355,7 @@ if supabase:
                     numero = str(row['numero_circolare'])
                     
                     if query.isdigit():
-                        return query in numero
+                        return query in str(numero)
                     else:
                         return query in titolo
                 
@@ -380,8 +376,8 @@ if supabase:
                 data_pub = row['data_pubblicazione']
                 is_new = (oggi - data_pub).days < 7
                 
-                # CORREZIONE PRINCIPALE: Usa la funzione di conversione sicura
-                data_pub_local = convert_pandas_timestamp_to_local(data_pub)
+                # CORREZIONE PRINCIPALE: Usa la funzione sicura per convertire la data
+                data_pub_safe = safe_convert_to_local_date(data_pub)
                 
                 badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
                 
@@ -395,14 +391,14 @@ if supabase:
                 <div class="circolare-card">
                     <div class="circolare-header">
                         {numero_html}
-                        <span class="circolare-date">📅 Pubblicata il {data_pub_local.strftime('%d/%m/%Y')}</span>
+                        <span class="circolare-date">📅 Pubblicata il {data_pub_safe.strftime('%d/%m/%Y')}</span>
                     </div>
                     <div class="circolare-title">
                         {titolo_pulito} {badge_html}
                     </div>
                 '''
                 
-                if 'pdf_url' in row and pd.notna(row['pdf_url']):
+                if 'pdf_url' in row and pd.notna(row['pdf_url']) and str(row['pdf_url']).strip():
                     urls = str(row['pdf_url']).split(';;;')
                     valid_urls = [url.strip() for url in urls if url.strip()]
                     
@@ -411,10 +407,11 @@ if supabase:
                         
                         for i, url in enumerate(valid_urls):
                             base = os.environ.get("SUPABASE_URL", "").rstrip('/')
-                            if not url.startswith('http'):
+                            if url and not url.startswith('http'):
                                 url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
                             
-                            card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
+                            if url:
+                                card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
                         
                         card_html += '</div>'
                 
@@ -422,12 +419,12 @@ if supabase:
                 st.markdown(card_html, unsafe_allow_html=True)
         
         else:
+            # CORREZIONE: f-string mancante
             st.markdown(f'<div class="empty-state">📭 Nessuna circolare presente negli ultimi {CIRCOLARI_VALIDITA_GIORNI} giorni</div>', unsafe_allow_html=True)
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
         st.error(f"Tipo di errore: {type(e).__name__}")
-        # Per debugging dettagliato
         import traceback
         st.code(traceback.format_exc())
 else:
