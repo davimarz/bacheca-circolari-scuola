@@ -258,6 +258,28 @@ def extract_circolare_number(titolo):
                 return 0
     return 0
 
+def convert_pandas_timestamp_to_local(timestamp):
+    """
+    Converte un pandas Timestamp con timezone in data locale (Italia)
+    Gestisce sia pandas Timestamp che datetime Python
+    """
+    try:
+        # Se è un pandas Timestamp, converti prima in datetime Python
+        if hasattr(timestamp, 'to_pydatetime'):
+            dt = timestamp.to_pydatetime()
+        else:
+            dt = timestamp
+        
+        # Se ha timezone, converti al fuso orario locale
+        if dt.tzinfo is not None:
+            return dt.astimezone()
+        else:
+            # Se non ha timezone, assumi UTC e converti
+            return dt.replace(tzinfo=timezone.utc).astimezone()
+    except Exception:
+        # In caso di errore, ritorna la data senza conversione
+        return timestamp
+
 if 'last_update' not in st.session_state:
     st.session_state.last_update = datetime.now(timezone.utc)
 
@@ -308,15 +330,25 @@ if supabase:
         oggi = datetime.now(timezone.utc)
         limite_data = oggi - timedelta(days=CIRCOLARI_VALIDITA_GIORNI)
         
+        # CORREZIONE: Usa il nome corretto della colonna dal database
         response = supabase.table('circolari')\
             .select("*")\
-            .gte('data_pubblicazione', limite_data.isoformat())\
+            .gte('data_publicazione', limite_data.isoformat())\
             .execute()
         
         df = pd.DataFrame(response.data)
         
         if not df.empty:
-            df['data_pubblicazione'] = pd.to_datetime(df['data_pubblicazione'], utc=True)
+            # CORREZIONE: Usa il nome corretto della colonna
+            # Il database ha 'data_publicazione' (una b), non 'data_pubblicazione' (due b)
+            if 'data_publicazione' in df.columns:
+                df['data_pubblicazione'] = pd.to_datetime(df['data_publicazione'], utc=True)
+            elif 'data_pubblicazione' in df.columns:
+                df['data_pubblicazione'] = pd.to_datetime(df['data_pubblicazione'], utc=True)
+            else:
+                st.error("❌ Colonna data non trovata nel database")
+                st.stop()
+            
             df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
             
             if st.session_state.search_query:
@@ -348,8 +380,8 @@ if supabase:
                 data_pub = row['data_pubblicazione']
                 is_new = (oggi - data_pub).days < 7
                 
-                # CORREZIONE: Usare astimezone() direttamente senza replace()
-                data_pub_local = data_pub.astimezone()
+                # CORREZIONE PRINCIPALE: Usa la funzione di conversione sicura
+                data_pub_local = convert_pandas_timestamp_to_local(data_pub)
                 
                 badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
                 
@@ -390,7 +422,7 @@ if supabase:
                 st.markdown(card_html, unsafe_allow_html=True)
         
         else:
-            st.markdown('<div class="empty-state">📭 Nessuna circolare presente negli ultimi {CIRCOLARI_VALIDITA_GIORNI} giorni</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="empty-state">📭 Nessuna circolare presente negli ultimi {CIRCOLARI_VALIDITA_GIORNI} giorni</div>', unsafe_allow_html=True)
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
