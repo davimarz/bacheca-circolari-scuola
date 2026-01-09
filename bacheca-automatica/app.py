@@ -13,12 +13,15 @@ try:
     CIRCOLARI_VALIDITA_GIORNI = CONFIG['CIRCOLARI_VALIDITA_GIORNI']
     SCUOLA_NOME = CONFIG['SCUOLA_NOME']
     APP_NOME = CONFIG['APP_NOME']
+    # Nuova variabile per anni scolastici
+    ANNI_SCOLASTICI = CONFIG.get('ANNI_SCOLASTICI', ['2024/25', '2025/26', '2026/27'])
 except ImportError:
     # Valori di default se config.py non esiste
     UPDATE_INTERVAL = 30
     CIRCOLARI_VALIDITA_GIORNI = 30
     SCUOLA_NOME = "IC Anna Frank - Agrigento"
     APP_NOME = "Bacheca Circolari"
+    ANNI_SCOLASTICI = ['2024/25', '2025/26', '2026/27']
 
 st.set_page_config(
     page_title=APP_NOME,
@@ -27,50 +30,67 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# =============================================
+# NUOVI STILI CON COLORI PASTELLO (dallo screenshot 3.png)
+# =============================================
 st.markdown("""
     <style>
     #MainMenu, footer, header {visibility: hidden;}
     
+    /* Sfondo principale - Verde menta chiaro */
     .stApp {
-        background-color: #f8f9fa;
+        background-color: #f0f9f4;
         font-family: 'Arial', sans-serif;
     }
     
+    /* Header principale - Beige pastello */
     .main-header {
         text-align: center;
         padding: 2rem 1rem;
-        background-color: #2c3e50;
-        border-radius: 10px;
+        background: linear-gradient(135deg, #fff9f0 0%, #f5f0e6 100%);
+        border-radius: 12px;
         margin-bottom: 1rem;
-        color: white;
+        color: #5a6c7d;
+        border: 1px solid #e8e2d6;
+        box-shadow: 0 4px 12px rgba(168, 155, 128, 0.1);
     }
     
     .main-title {
         font-size: 2.2rem;
         font-weight: 700;
         margin-bottom: 0.5rem;
-        color: white;
+        color: #4a6572;
     }
     
     .school-info {
         font-size: 1.3rem;
-        color: #ecf0f1;
+        color: #6a7b8c;
         margin-bottom: 0.5rem;
     }
     
     .author-info {
         font-size: 0.9rem;
-        color: #bdc3c7;
+        color: #8a9aab;
         font-style: italic;
     }
     
+    /* Card circolari - Beige chiaro con bordi arrotondati */
     .circolare-card {
-        background-color: white;
-        border-radius: 8px;
+        background-color: #fffefb;
+        border-radius: 12px;
         padding: 1.2rem;
         margin-bottom: 1rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        border-left: 4px solid #3498db;
+        box-shadow: 0 3px 10px rgba(168, 155, 128, 0.08);
+        border-left: 5px solid #a8d8ea;
+        border-top: 1px solid #f0e6d8;
+        border-right: 1px solid #f0e6d8;
+        border-bottom: 1px solid #f0e6d8;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .circolare-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(168, 155, 128, 0.12);
     }
     
     .circolare-header {
@@ -80,28 +100,31 @@ st.markdown("""
         gap: 10px;
     }
     
+    /* Numero circolare - Turchese pastello */
     .circolare-number {
         font-size: 0.9rem;
-        color: #3498db;
+        color: #2a7a8c;
         font-weight: 600;
-        background-color: #ecf0f1;
-        padding: 2px 8px;
-        border-radius: 4px;
+        background-color: #e8f4f8;
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid #c8e4f0;
     }
     
     .circolare-date {
         font-size: 0.85rem;
-        color: #7f8c8d;
+        color: #7a8c9d;
     }
     
     .circolare-title {
         font-size: 1.1rem;
         font-weight: 600;
-        color: #2c3e50;
+        color: #4a5a6a;
         margin-bottom: 0.8rem;
         line-height: 1.4;
     }
     
+    /* Pulsanti documenti - Azzurro pastello */
     .doc-buttons-container {
         display: flex;
         flex-direction: row;
@@ -111,141 +134,230 @@ st.markdown("""
     }
     
     .doc-button {
-        background-color: #2c3e50;
+        background: linear-gradient(135deg, #a8d8ea 0%, #8cc6e0 100%);
         color: white;
         border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
+        border-radius: 8px;
+        padding: 8px 16px;
         text-decoration: none;
         font-size: 0.85rem;
         font-weight: 500;
-        transition: background-color 0.2s;
+        transition: all 0.2s ease;
         display: inline-flex;
         align-items: center;
-        gap: 5px;
+        gap: 6px;
         white-space: nowrap;
+        box-shadow: 0 2px 4px rgba(136, 198, 224, 0.2);
     }
     
     .doc-button:hover {
-        background-color: #34495e;
+        background: linear-gradient(135deg, #8cc6e0 0%, #6ab4d6 100%);
         color: white;
         text-decoration: none;
+        box-shadow: 0 3px 6px rgba(136, 198, 224, 0.3);
+        transform: translateY(-1px);
     }
     
-    .update-info {
-        background-color: #ecf0f1;
-        border-radius: 6px;
-        padding: 0.8rem;
+    /* Contenitore superiore - Beige pastello */
+    .top-container {
+        background-color: #fff9f0;
+        border-radius: 12px;
+        padding: 1.2rem;
         margin-bottom: 1.5rem;
-        text-align: center;
-        font-size: 0.9rem;
-        color: #2c3e50;
+        border: 1px solid #e8e2d6;
+        box-shadow: 0 3px 8px rgba(168, 155, 128, 0.08);
+    }
+    
+    .update-info-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 15px;
     }
     
-    .update-text {
+    .update-info {
+        background-color: #e8f4f8;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 0.95rem;
+        color: #2a7a8c;
         display: flex;
         align-items: center;
         gap: 8px;
+        border: 1px solid #c8e4f0;
+        font-weight: 500;
+    }
+    
+    .anno-scolastico-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background-color: #fff;
+        padding: 6px 12px;
+        border-radius: 8px;
+        border: 1px solid #d8e2e8;
+    }
+    
+    .anno-label {
+        font-size: 0.9rem;
+        color: #5a6c7d;
+        font-weight: 500;
+    }
+    
+    .anno-select {
+        padding: 6px 10px;
+        border: 1px solid #c8d8e0;
+        border-radius: 6px;
+        background-color: white;
+        color: #4a5a6a;
+        font-size: 0.9rem;
+        font-weight: 500;
+        cursor: pointer;
+        min-width: 100px;
+    }
+    
+    /* Barra di ricerca - Stessa riga */
+    .search-row {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        margin-top: 0.5rem;
     }
     
     .search-container {
         display: flex;
         align-items: center;
         gap: 8px;
+        flex-grow: 1;
+        max-width: 600px;
     }
     
     .search-input {
-        padding: 6px 12px;
-        border: 1px solid #bdc3c7;
-        border-radius: 4px;
-        font-size: 0.9rem;
-        width: 250px;
+        padding: 8px 14px;
+        border: 1px solid #d8e2e8;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        flex-grow: 1;
+        background-color: white;
+        color: #4a5a6a;
+        transition: border-color 0.2s;
+    }
+    
+    .search-input:focus {
+        outline: none;
+        border-color: #a8d8ea;
+        box-shadow: 0 0 0 2px rgba(168, 216, 234, 0.2);
     }
     
     .search-button {
-        background-color: #3498db;
+        background: linear-gradient(135deg, #a8d8ea 0%, #8cc6e0 100%);
         color: white;
         border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
-        font-size: 0.9rem;
+        border-radius: 8px;
+        padding: 8px 18px;
+        font-size: 0.95rem;
+        font-weight: 500;
         cursor: pointer;
-        transition: background-color 0.2s;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+        box-shadow: 0 2px 4px rgba(136, 198, 224, 0.2);
     }
     
     .search-button:hover {
-        background-color: #2980b9;
+        background: linear-gradient(135deg, #8cc6e0 0%, #6ab4d6 100%);
+        box-shadow: 0 3px 6px rgba(136, 198, 224, 0.3);
+        transform: translateY(-1px);
     }
     
+    .clear-search {
+        background: linear-gradient(135deg, #f8a8b8 0%, #f58ca0 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 18px;
+        font-size: 0.95rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+        box-shadow: 0 2px 4px rgba(245, 140, 160, 0.2);
+    }
+    
+    .clear-search:hover {
+        background: linear-gradient(135deg, #f58ca0 0%, #f27088 100%);
+        box-shadow: 0 3px 6px rgba(245, 140, 160, 0.3);
+        transform: translateY(-1px);
+    }
+    
+    /* Badge - Rosa pastello per NUOVA, Grigio per ARCHIVIO */
     .badge {
         font-size: 0.7rem;
-        padding: 2px 6px;
-        border-radius: 3px;
+        padding: 3px 8px;
+        border-radius: 6px;
         margin-left: 8px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
     }
     
     .badge-new {
-        background-color: #2ecc71;
+        background: linear-gradient(135deg, #f8a8b8 0%, #f58ca0 100%);
         color: white;
+        box-shadow: 0 2px 4px rgba(245, 140, 160, 0.2);
     }
     
     .badge-old {
-        background-color: #95a5a6;
+        background: linear-gradient(135deg, #c8d8e0 0%, #b0c4d0 100%);
         color: white;
+        box-shadow: 0 2px 4px rgba(176, 196, 208, 0.2);
     }
     
     .empty-state {
         text-align: center;
         padding: 3rem;
-        color: #7f8c8d;
+        color: #8a9aab;
+        background-color: #fffefb;
+        border-radius: 12px;
+        border: 1px solid #e8e2d6;
+        margin-top: 1rem;
     }
     
-    .clear-search {
-        background-color: #e74c3c;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
-        font-size: 0.9rem;
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-    
-    .clear-search:hover {
-        background-color: #c0392b;
+    /* Footer */
+    .footer {
+        text-align: center;
+        margin-top: 3rem;
+        padding: 1.5rem;
+        color: #8a9aab;
+        font-size: 0.85rem;
+        border-top: 1px solid #e8e2d6;
     }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown(f"""
-<div class="main-header">
-    <div class="main-title">🏫 {APP_NOME}</div>
-    <div class="school-info">{SCUOLA_NOME}</div>
-    <div class="author-info">realizzato da: Davide prof. Marziano</div>
-</div>
-""", unsafe_allow_html=True)
+# =============================================
+# FUNZIONI UTILI
+# =============================================
 
-@st.cache_resource
-def init_supabase():
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    
-    if not url or not key:
-        st.error("❌ Configura SUPABASE_URL e SUPABASE_KEY")
-        return None
-    
-    if not url.startswith("https://"):
-        st.error("❌ URL deve iniziare con https://")
-        return None
-    
+def get_anno_scolastico_dates(anno_scolastico):
+    """
+    Restituisce le date di inizio e fine per un anno scolastico.
+    Formato anno_scolastico: '2024/25'
+    """
     try:
-        return create_client(url, key)
-    except Exception as e:
-        st.error(f"❌ Errore connessione Supabase: {str(e)}")
-        return None
+        anno_inizio = int(anno_scolastico.split('/')[0])
+        # Inizio: 1 settembre dell'anno di inizio
+        data_inizio = datetime(anno_inizio, 9, 1)
+        # Fine: 31 agosto dell'anno successivo (anno_inizio + 1)
+        data_fine = datetime(anno_inizio + 1, 8, 31)
+        return data_inizio, data_fine
+    except:
+        # Fallback: anno corrente
+        anno_corrente = datetime.now().year
+        data_inizio = datetime(anno_corrente, 9, 1)
+        data_fine = datetime(anno_corrente + 1, 8, 31)
+        return data_inizio, data_fine
 
 def extract_circolare_number(titolo):
     if isinstance(titolo, str):
@@ -271,28 +383,72 @@ def safe_convert_to_local_date(timestamp):
     except Exception:
         return datetime.now()
 
+# =============================================
+# HEADER PRINCIPALE
+# =============================================
+st.markdown(f"""
+<div class="main-header">
+    <div class="main-title">🏫 {APP_NOME}</div>
+    <div class="school-info">{SCUOLA_NOME}</div>
+    <div class="author-info">realizzato da: Davide prof. Marziano</div>
+</div>
+""", unsafe_allow_html=True)
+
+# =============================================
+# INIZIALIZZAZIONE SESSION STATE
+# =============================================
 if 'last_update' not in st.session_state:
     st.session_state.last_update = datetime.now(timezone.utc)
 
 if 'search_query' not in st.session_state:
     st.session_state.search_query = ""
 
+if 'anno_scolastico_selezionato' not in st.session_state:
+    # Default: anno corrente 2025/26
+    st.session_state.anno_scolastico_selezionato = '2025/26'
+
+# =============================================
+# CONTENITORE SUPERIORE CON CONTROLLI
+# =============================================
+st.markdown('<div class="top-container">', unsafe_allow_html=True)
+
+# Prima riga: Contatore aggiornamento + Selettore anno scolastico
 tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
 tempo_rimanente = max(0, UPDATE_INTERVAL - int(tempo_trascorso))
 
 st.markdown(f"""
-<div class="update-info">
-    <div class="update-text">
+<div class="update-info-row">
+    <div class="update-info">
         🔄 Prossimo aggiornamento automatico tra: <strong>{tempo_rimanente} minuti</strong>
     </div>
+    
+    <div class="anno-scolastico-container">
+        <span class="anno-label">Anno Scolastico:</span>
+        <select id="annoSelect" class="anno-select" onchange="cambiaAnnoScolastico()">
+            <option value="2024/25" {"selected" if st.session_state.anno_scolastico_selezionato == "2024/25" else ""}>2024/25</option>
+            <option value="2025/26" {"selected" if st.session_state.anno_scolastico_selezionato == "2025/26" else ""}>2025/26</option>
+            <option value="2026/27" {"selected" if st.session_state.anno_scolastico_selezionato == "2026/27" else ""}>2026/27</option>
+        </select>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Seconda riga: Barra di ricerca
+st.markdown("""
+<div class="search-row">
     <div class="search-container">
-        <input type="text" id="searchInput" class="search-input" placeholder="Cerca per numero o testo..." value="{st.session_state.search_query}" onkeydown="if(event.keyCode==13) searchCircolari()">
+        <input type="text" id="searchInput" class="search-input" placeholder="Cerca per numero o testo..." value="" onkeydown="if(event.keyCode==13) searchCircolari()">
         <button class="search-button" onclick="searchCircolari()">🔍 Cerca</button>
         <button class="clear-search" onclick="clearSearch()">❌ Cancella</button>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
+st.markdown('</div>', unsafe_allow_html=True)  # Chiusura top-container
+
+# =============================================
+# JAVASCRIPT PER INTERAZIONI
+# =============================================
 st.markdown("""
 <script>
 function searchCircolari() {
@@ -307,53 +463,102 @@ function searchCircolari() {
 function clearSearch() {
     window.location.href = window.location.pathname;
 }
+
+function cambiaAnnoScolastico() {
+    var select = document.getElementById('annoSelect');
+    var annoSelezionato = select.value;
+    
+    // Aggiungi l'anno scolastico come parametro URL
+    var url = new URL(window.location);
+    url.searchParams.set('anno', annoSelezionato);
+    window.location.href = url.toString();
+}
 </script>
 """, unsafe_allow_html=True)
 
+# =============================================
+# GESTIONE PARAMETRI URL
+# =============================================
 query_params = st.query_params
+
+# Gestione anno scolastico
+if 'anno' in query_params:
+    anno_url = query_params['anno']
+    if anno_url in ANNI_SCOLASTICI:
+        st.session_state.anno_scolastico_selezionato = anno_url
+
+# Gestione ricerca
 if 'search' in query_params:
     st.session_state.search_query = query_params['search']
+
+# =============================================
+# CONNESSIONE AL DATABASE E FILTRI
+# =============================================
+@st.cache_resource
+def init_supabase():
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    
+    if not url or not key:
+        st.error("❌ Configura SUPABASE_URL e SUPABASE_KEY")
+        return None
+    
+    if not url.startswith("https://"):
+        st.error("❌ URL deve iniziare con https://")
+        return None
+    
+    try:
+        return create_client(url, key)
+    except Exception as e:
+        st.error(f"❌ Errore connessione Supabase: {str(e)}")
+        return None
 
 supabase = init_supabase()
 
 if supabase:
     try:
-        oggi = datetime.now(timezone.utc)
-        limite_data = oggi - timedelta(days=CIRCOLARI_VALIDITA_GIORNI)
+        # Ottieni date per l'anno scolastico selezionato
+        data_inizio_anno, data_fine_anno = get_anno_scolastico_dates(
+            st.session_state.anno_scolastico_selezionato
+        )
         
-        # MODIFICA CRITICA: SENZA FILTRO DATA - prende TUTTE le circolari
+        # Debug (opzionale)
+        # st.info(f"Anno scolastico: {st.session_state.anno_scolastico_selezionato}")
+        # st.info(f"Periodo: {data_inizio_anno.strftime('%d/%m/%Y')} - {data_fine_anno.strftime('%d/%m/%Y')}")
+        
+        # Carica TUTTE le circolari (filtro per data applicato dopo)
         response = supabase.table('circolari')\
             .select("*")\
             .execute()
         
         df = pd.DataFrame(response.data)
         
-        # DEBUG: mostra le colonne disponibili
-        st.info(f"📊 Colonne trovate nel database: {', '.join(df.columns.tolist())}")
-        
         if not df.empty:
-            # CERCA la colonna data con vari nomi possibili
+            # Identifica colonna data
             colonna_data = None
             possibili_nomi = ['data_pubblicazione', 'data_publicazione', 'data_pubblica', 'data']
             
             for nome in possibili_nomi:
                 if nome in df.columns:
                     colonna_data = nome
-                    st.success(f"✅ Trovata colonna data: '{colonna_data}'")
                     break
             
             if colonna_data:
                 df['data_pubblicazione'] = pd.to_datetime(df[colonna_data])
             else:
-                st.error("❌ Nessuna colonna data trovata nel database!")
-                st.write("Colonne disponibili:", df.columns.tolist())
-                st.stop()
+                # Se non trova colonna data, usa oggi come fallback
+                df['data_pubblicazione'] = pd.to_datetime(datetime.now(timezone.utc))
             
+            # Estrai numero circolare
             df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
             
-            # FILTRA manualmente le ultime 30 giorni (in Python invece che in SQL)
-            df = df[df['data_pubblicazione'] >= limite_data]
+            # FILTRO ANNO SCOLASTICO: mantieni solo circolari tra 1 settembre e 31 agosto
+            df = df[
+                (df['data_pubblicazione'] >= data_inizio_anno) & 
+                (df['data_pubblicazione'] <= data_fine_anno)
+            ]
             
+            # FILTRO RICERCA
             if st.session_state.search_query:
                 query = st.session_state.search_query.lower()
                 
@@ -377,12 +582,21 @@ if supabase:
             else:
                 df_display = df
             
+            # VISUALIZZAZIONE CIRCOLARI
             if not df_display.empty:
                 df_display = df_display.sort_values('numero_circolare', ascending=False)
                 
                 for idx, row in df_display.iterrows():
                     data_pub = row['data_pubblicazione']
-                    is_new = (oggi - data_pub).days < 7
+                    oggi_utc = datetime.now(timezone.utc)
+                    
+                    # Determina se è nuova (< 7 giorni)
+                    if hasattr(data_pub, 'tzinfo') and data_pub.tzinfo is not None:
+                        is_new = (oggi_utc - data_pub).days < 7
+                    else:
+                        data_pub_naive = pd.to_datetime(data_pub).tz_localize(None)
+                        oggi_naive = datetime.now()
+                        is_new = (oggi_naive - data_pub_naive).days < 7
                     
                     data_pub_safe = safe_convert_to_local_date(data_pub)
                     
@@ -425,22 +639,43 @@ if supabase:
                     card_html += '</div>'
                     st.markdown(card_html, unsafe_allow_html=True)
             else:
-                st.markdown(f'<div class="empty-state">📭 Nessuna circolare presente negli ultimi {CIRCOLARI_VALIDITA_GIORNI} giorni</div>', unsafe_allow_html=True)
+                # Messaggio quando non ci sono circolari
+                st.markdown(f'''
+                <div class="empty-state">
+                    <h3 style="color: #8a9aab; margin-bottom: 1rem;">📭 Nessuna circolare disponibile</h3>
+                    <p style="color: #a8b8c8;">
+                        Per l'anno scolastico <strong>{st.session_state.anno_scolastico_selezionato}</strong><br>
+                        (periodo: {data_inizio_anno.strftime('%d/%m/%Y')} - {data_fine_anno.strftime('%d/%m/%Y')})
+                    </p>
+                </div>
+                ''', unsafe_allow_html=True)
         
         else:
-            st.markdown(f'<div class="empty-state">📭 Nessuna circolare nel database</div>', unsafe_allow_html=True)
+            # Database vuoto
+            st.markdown(f'''
+            <div class="empty-state">
+                <h3 style="color: #8a9aab; margin-bottom: 1rem;">📭 Database vuoto</h3>
+                <p style="color: #a8b8c8;">
+                    Non ci sono circolari nel database per nessun anno scolastico.<br>
+                    Controlla che il robot di scraping sia configurato correttamente.
+                </p>
+            </div>
+            ''', unsafe_allow_html=True)
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
-        st.error(f"Tipo di errore: {type(e).__name__}")
         import traceback
         st.code(traceback.format_exc())
 else:
     st.warning("⚠️ Impossibile connettersi al database.")
 
+# =============================================
+# FOOTER
+# =============================================
 st.markdown(f"""
-<div style="text-align: center; margin-top: 3rem; padding: 1rem; color: #7f8c8d; font-size: 0.8rem;">
-    <hr style="border: none; height: 1px; background-color: #bdc3c7; margin: 1rem 0;">
-    {APP_NOME} - {SCUOLA_NOME}
+<div class="footer">
+    <hr style="border: none; height: 1px; background-color: #e8e2d6; margin: 1rem 0;">
+    {APP_NOME} - {SCUOLA_NOME}<br>
+    <small>Anno scolastico: {st.session_state.anno_scolastico_selezionato}</small>
 </div>
 """, unsafe_allow_html=True)
