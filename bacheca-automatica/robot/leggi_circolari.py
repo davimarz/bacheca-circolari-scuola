@@ -32,6 +32,9 @@ driver = webdriver.Chrome(options=chrome_options)
 
 def extract_date_from_text(data_text):
     """Estrae la data dal testo della circolare"""
+    if not data_text:
+        return None
+    
     # Cerca diversi formati di data
     date_patterns = [
         r'(\d{2})/(\d{2})/(\d{4})',  # 25/10/2024
@@ -62,230 +65,23 @@ def extract_date_from_text(data_text):
                         return datetime(anno, mese, giorno)
                     except:
                         continue
-    return None
-
-def click_all_years_buttons():
-    """Clicca su tutti i pulsanti degli anni per espandere le circolari"""
-    print("Cerco pulsanti degli anni/accordion...")
     
-    # Prova diversi selettori per pulsanti di anni
-    year_selectors = [
-        "button[class*='anno']",
-        "button[class*='year']",
-        ".anno-button",
-        ".year-button",
-        "a[href*='anno']",
-        "a[href*='year']",
-        "li > a",  # Potrebbero essere link in una lista
-        ".dropdown-toggle",
-        ".btn-group > button"
-    ]
-    
-    all_year_buttons = []
-    
-    for selector in year_selectors:
+    # Cerca anche nel formato Data: 25/10/2024
+    match = re.search(r'Data\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})', data_text, re.IGNORECASE)
+    if match:
         try:
-            buttons = driver.find_elements(By.CSS_SELECTOR, selector)
-            for btn in buttons:
-                text = btn.text.strip()
-                # Se il testo sembra un anno (contiene 2022, 2023, 2024, 2025, ecc.)
-                if any(year in text for year in ['2022', '2023', '2024', '2025', '2026']):
-                    if btn not in all_year_buttons:
-                        all_year_buttons.append(btn)
-                        print(f"  Trovato pulsante anno: '{text}'")
-        except:
-            continue
-    
-    # Se non trovati, cerca per testo
-    if not all_year_buttons:
-        try:
-            # Cerca elementi che contengono anni
-            year_elements = driver.find_elements(By.XPATH, "//*[contains(text(), '2022') or contains(text(), '2023') or contains(text(), '2024') or contains(text(), '2025')]")
-            for elem in year_elements:
-                # Cerca un elemento cliccabile vicino
-                try:
-                    parent = elem.find_element(By.XPATH, "./ancestor::button | ./ancestor::a | ./ancestor::div[@onclick]")
-                    if parent not in all_year_buttons:
-                        all_year_buttons.append(parent)
-                        print(f"  Trovato elemento anno (per testo): '{elem.text[:50]}...'")
-                except:
-                    continue
+            giorno, mese, anno = map(int, match.group(1).split('/'))
+            return datetime(anno, mese, giorno)
         except:
             pass
     
-    # Clicca su tutti i pulsanti degli anni
-    for btn in all_year_buttons:
-        try:
-            print(f"  Clicco su: '{btn.text[:50]}...'")
-            driver.execute_script("arguments[0].scrollIntoView(true);", btn)
-            time.sleep(1)
-            
-            # Prova prima con JavaScript click
-            driver.execute_script("arguments[0].click();", btn)
-            time.sleep(2)
-            
-            # Controlla se si è espanso
-            try:
-                btn.click()
-                time.sleep(1)
-            except:
-                pass
-                
-        except Exception as e:
-            print(f"  Errore clic pulsante: {e}")
-            continue
-    
-    return len(all_year_buttons)
-
-def find_and_click_pagination():
-    """Cerca e clicca su elementi di paginazione"""
-    print("Cerco elementi di paginazione...")
-    
-    # Prova diversi selettori di paginazione
-    pagination_selectors = [
-        ".pagination",
-        ".page-numbers",
-        ".pager",
-        ".pages",
-        ".load-more",
-        "#loadMore",
-        ".show-more",
-        "button:contains('Carica')",
-        "a:contains('altre')",
-        "a:contains('more')",
-        "a:contains('tutte')",
-        "a:contains('all')"
-    ]
-    
-    for selector in pagination_selectors:
-        try:
-            elements = driver.find_elements(By.CSS_SELECTOR, selector)
-            for elem in elements:
-                if elem.is_displayed():
-                    print(f"  Trovato elemento paginazione: {selector}")
-                    driver.execute_script("arguments[0].scrollIntoView(true);", elem)
-                    time.sleep(1)
-                    driver.execute_script("arguments[0].click();", elem)
-                    time.sleep(3)
-                    return True
-        except:
-            continue
-    
-    # Cerca per testo
-    pagination_texts = ['Carica più', 'Mostra più', 'Altri risultati', 'Vedi tutte', 'Tutte le circolari']
-    for text in pagination_texts:
-        try:
-            elements = driver.find_elements(By.XPATH, f"//*[contains(text(), '{text}')]")
-            for elem in elements:
-                if elem.is_displayed():
-                    print(f"  Trovato per testo: '{text}'")
-                    driver.execute_script("arguments[0].scrollIntoView(true);", elem)
-                    time.sleep(1)
-                    driver.execute_script("arguments[0].click();", elem)
-                    time.sleep(3)
-                    return True
-        except:
-            continue
-    
-    return False
-
-def get_all_circolari_from_page():
-    """Ottiene tutte le circolari dalla pagina corrente"""
-    all_circ = []
-    
-    # Prova diversi selettori per trovare le righe delle circolari
-    row_selectors = [
-        "tr",  # Righe di tabella
-        ".list-group-item",
-        ".item",
-        ".row",
-        "div[class*='circ']",
-        "li",
-        ".card",
-        ".panel"
-    ]
-    
-    for selector in row_selectors:
-        try:
-            rows = driver.find_elements(By.CSS_SELECTOR, selector)
-            print(f"  Trovate {len(rows)} righe con selettore: {selector}")
-            
-            for row in rows:
-                try:
-                    text = row.text.strip()
-                    if not text or len(text) < 20:
-                        continue
-                    
-                    # Cerca indicatori di circolare
-                    has_circ_keyword = any(keyword in text.lower() for keyword in ['circolare', 'circ.', 'prot.', 'n. '])
-                    has_date = re.search(r'\d{2}/\d{2}/\d{4}', text) or re.search(r'\d{2}-\d{2}-\d{4}', text)
-                    
-                    if has_circ_keyword or has_date:
-                        # Estrai informazioni
-                        lines = text.split('\n')
-                        titolo = ""
-                        data_testo = ""
-                        
-                        # Cerca la prima linea significativa come titolo
-                        for line in lines:
-                            if line.strip() and len(line.strip()) > 5:
-                                titolo = line.strip()
-                                break
-                        
-                        # Cerca una data
-                        for line in lines:
-                            if re.search(r'\d{2}/\d{2}/\d{4}', line) or re.search(r'\d{2}-\d{2}-\d{4}', line):
-                                data_testo = line.strip()
-                                break
-                        
-                        if not data_testo:
-                            # Cerca la data nel testo completo
-                            date_match = re.search(r'(\d{2}/\d{2}/\d{4})', text)
-                            if date_match:
-                                data_testo = date_match.group(1)
-                        
-                        # Cerca link PDF
-                        pdf_urls = []
-                        try:
-                            links = row.find_elements(By.TAG_NAME, "a")
-                            for link in links:
-                                href = link.get_attribute("href")
-                                if href and href.endswith('.pdf'):
-                                    pdf_urls.append(href)
-                        except:
-                            pass
-                        
-                        if titolo:
-                            all_circ.append({
-                                'element': row,
-                                'titolo': titolo,
-                                'data_testo': data_testo,
-                                'pdf_urls': pdf_urls,
-                                'full_text': text[:200] + "..." if len(text) > 200 else text
-                            })
-                except Exception as e:
-                    continue
-                    
-            if all_circ:
-                break
-                
-        except:
-            continue
-    
-    return all_circ
+    return None
 
 try:
     oggi = datetime.now()
+    limite_30_giorni = oggi - timedelta(days=30)
     
-    # Definisco l'anno scolastico corrente (settembre 2024 - giugno 2025)
-    if oggi.month >= 9:  # Da settembre a dicembre
-        anno_scolastico_inizio = datetime(oggi.year, 9, 1)
-        anno_scolastico_fine = datetime(oggi.year + 1, 6, 30)
-    else:  # Da gennaio ad agosto
-        anno_scolastico_inizio = datetime(oggi.year - 1, 9, 1)
-        anno_scolastico_fine = datetime(oggi.year, 6, 30)
-    
-    print(f"Anno scolastico considerato: {anno_scolastico_inizio.strftime('%d/%m/%Y')} - {anno_scolastico_fine.strftime('%d/%m/%Y')}")
+    print(f"Data limite (ultimi 30 giorni): {limite_30_giorni.strftime('%d/%m/%Y')}")
     
     driver.get("https://www.portaleargo.it/famiglia")
     time.sleep(3)
@@ -309,117 +105,120 @@ try:
     print("Aspetto caricamento pagina circolari...")
     time.sleep(5)
     
-    # STRATEGIA 1: Clicca su tutti i pulsanti degli anni
-    print("\n=== STRATEGIA 1: Espansione anni ===")
-    years_clicked = click_all_years_buttons()
-    print(f"Cliccati {years_clicked} pulsanti anni")
-    time.sleep(3)
+    # Fai screenshot per debug
+    driver.save_screenshot("circolari_page.png")
+    print("Screenshot salvato come circolari_page.png")
     
-    # STRATEGIA 2: Cerca paginazione
-    print("\n=== STRATEGIA 2: Paginazione ===")
-    pagination_found = find_and_click_pagination()
-    if pagination_found:
-        print("Trovata e cliccata paginazione")
-        time.sleep(3)
+    all_circolari = []
     
-    # STRATEGIA 3: Scrolling multiplo
-    print("\n=== STRATEGIA 3: Scrolling approfondito ===")
-    for i in range(5):
-        print(f"  Scroll {i+1}/5")
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(2)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(1)
-    
-    # STRATEGIA 4: Cerca sezioni nascoste
-    print("\n=== STRATEGIA 4: Ricerca sezioni nascoste ===")
+    # PRIMO TENTATIVO: Usa i selettori originali del tuo codice
     try:
-        # Cerca elementi collassati/accordion
-        collapsed_selectors = [
-            ".collapse",
-            ".collapsed",
-            "[aria-expanded='false']",
-            ".hidden",
-            ".d-none"
-        ]
-        
-        for selector in collapsed_selectors:
+        circolari_elements = driver.find_elements(By.CSS_SELECTOR, ".circolare-item")
+        print(f"Trovate {len(circolari_elements)} circolari con .circolare-item")
+    except:
+        circolari_elements = []
+        print("Nessuna circolare trovata con .circolare-item")
+    
+    # SECONDO TENTATIVO: Se non trovi abbastanza, prova altri selettori
+    if len(circolari_elements) < 5:
+        try:
+            # Cerca qualsiasi elemento che sembra una circolare
+            all_elements = driver.find_elements(By.CSS_SELECTOR, "div, tr, li, .card, .panel")
+            for elem in all_elements:
+                try:
+                    text = elem.text.strip()
+                    if text and len(text) > 30:
+                        # Controlla se sembra una circolare
+                        if any(keyword in text.lower() for keyword in ['circolare', 'prot.', 'n. ']):
+                            if re.search(r'\d{2}/\d{2}/\d{4}', text):
+                                circolari_elements.append(elem)
+                except:
+                    continue
+            print(f"Trovate {len(circolari_elements)} circolari con ricerca generica")
+        except Exception as e:
+            print(f"Errore ricerca generica: {e}")
+    
+    # TERZO TENTATIVO: Cerca per testo "Circolare"
+    if len(circolari_elements) < 5:
+        try:
+            circolari_by_text = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'CIRC', 'circ'), 'circolare')]")
+            for elem in circolari_by_text:
+                try:
+                    parent = elem.find_element(By.XPATH, "./ancestor::div[1]")
+                    if parent not in circolari_elements:
+                        circolari_elements.append(parent)
+                except:
+                    if elem not in circolari_elements:
+                        circolari_elements.append(elem)
+            print(f"Trovate {len(circolari_elements)} circolari per testo")
+        except Exception as e:
+            print(f"Errore ricerca per testo: {e}")
+    
+    print(f"\nElaborazione di {len(circolari_elements)} elementi trovati...")
+    
+    for idx, elem in enumerate(circolari_elements, 1):
+        try:
+            # Prendi il testo completo
+            full_text = elem.text.strip()
+            if not full_text or len(full_text) < 20:
+                continue
+            
+            print(f"\n[{idx}] Testo completo (primi 100 caratteri): {full_text[:100]}...")
+            
+            # Dividi in linee
+            lines = full_text.split('\n')
+            
+            # Cerca titolo (prima linea significativa)
+            titolo = ""
+            for line in lines:
+                line = line.strip()
+                if line and len(line) > 5:
+                    titolo = line
+                    break
+            
+            # Cerca data
+            data_testo = ""
+            for line in lines:
+                line = line.strip()
+                # Cerca pattern di data
+                if re.search(r'\d{2}/\d{2}/\d{4}', line):
+                    data_testo = line
+                    break
+            
+            # Se non trovata, cerca nel testo completo
+            if not data_testo:
+                match = re.search(r'(\d{2}/\d{2}/\d{4})', full_text)
+                if match:
+                    data_testo = match.group(1)
+            
+            # Cerca link PDF
+            pdf_urls = []
             try:
-                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                print(f"  Trovati {len(elements)} elementi con: {selector}")
-                
-                for elem in elements:
+                links = elem.find_elements(By.TAG_NAME, "a")
+                for link in links:
                     try:
-                        # Prova ad espandere
-                        driver.execute_script("arguments[0].scrollIntoView(true);", elem)
-                        driver.execute_script("arguments[0].setAttribute('class', arguments[0].getAttribute('class').replace('collapse', '').replace('collapsed', ''));", elem)
-                        driver.execute_script("arguments[0].setAttribute('aria-expanded', 'true');", elem)
-                        driver.execute_script("arguments[0].style.display = 'block';", elem)
+                        href = link.get_attribute("href")
+                        if href and (href.endswith('.pdf') or 'pdf' in href.lower()):
+                            pdf_urls.append(href)
                     except:
                         continue
             except:
-                continue
-    except Exception as e:
-        print(f"  Errore ricerca sezioni nascoste: {e}")
-    
-    time.sleep(3)
-    
-    # STRATEGIA 5: Cerca e clicca su tutte le tab
-    print("\n=== STRATEGIA 5: Ricerca tab ===")
-    try:
-        tabs = driver.find_elements(By.CSS_SELECTOR, ".nav-tabs a, .nav-pills a, .tab-pane a, [role='tab']")
-        print(f"  Trovate {len(tabs)} tab/links")
-        
-        for tab in tabs:
-            try:
-                if tab.is_displayed():
-                    tab_text = tab.text.strip()
-                    if tab_text and len(tab_text) > 0:
-                        print(f"  Clicco tab: '{tab_text}'")
-                        driver.execute_script("arguments[0].click();", tab)
-                        time.sleep(2)
-            except:
-                continue
-    except Exception as e:
-        print(f"  Errore gestione tab: {e}")
-    
-    time.sleep(3)
-    
-    # Fai screenshot finale per debug
-    print("\nFaccio screenshot finale...")
-    driver.save_screenshot("circolari_finale.png")
-    print("Screenshot salvato come circolari_finale.png")
-    
-    # ORA raccogli tutte le circolari
-    print("\n=== RACCOLTA CIRCOLARI ===")
-    all_circolari_data = get_all_circolari_from_page()
-    
-    print(f"\nTotale elementi trovati: {len(all_circolari_data)}")
-    
-    # Processa e filtra per anno scolastico
-    all_circolari = []
-    
-    for idx, circ_data in enumerate(all_circolari_data, 1):
-        try:
-            titolo = circ_data['titolo']
-            data_testo = circ_data['data_testo']
-            pdf_urls = circ_data['pdf_urls']
+                pass
             
-            print(f"\n[{idx}] Analizzo: {titolo[:80]}...")
-            print(f"    Data: {data_testo}")
-            print(f"    PDF: {len(pdf_urls)} trovati")
+            print(f"    Titolo: {titolo[:60]}...")
+            print(f"    Data testo: {data_testo}")
+            print(f"    PDF trovati: {len(pdf_urls)}")
             
             # Estrai la data
             data_obj = extract_date_from_text(data_testo)
             
             if data_obj is None:
-                # Prova a cercare la data nel titolo
-                data_obj = extract_date_from_text(titolo)
-                if data_obj is None:
-                    data_obj = oggi
+                print(f"    ⚠️  Data non riconosciuta: '{data_testo}'")
+                # Assegna data di oggi
+                data_obj = oggi
             
-            # Controlla se la circolare è nell'anno scolastico corrente
-            if anno_scolastico_inizio <= data_obj <= anno_scolastico_fine:
+            # Controlla se la circolare è negli ultimi 30 giorni
+            if data_obj >= limite_30_giorni:
                 # Formatta la data per il database
                 data_pubblica = data_obj.strftime("%Y-%m-%d %H:%M:%S")
                 
@@ -432,18 +231,19 @@ try:
                 
                 print(f"    ✅ AGGIUNTA - {data_obj.strftime('%d/%m/%Y')}")
             else:
-                print(f"    ❌ SCARTATA - Fuori anno scolastico: {data_obj.strftime('%d/%m/%Y')}")
+                print(f"    ❌ SCARTATA - Troppo vecchia: {data_obj.strftime('%d/%m/%Y')}")
                 
         except Exception as e:
-            print(f"    ❌ ERRORE elaborazione: {e}")
+            print(f"    ❌ ERRORE elaborazione: {str(e)[:100]}...")
             continue
     
     print(f"\n=== RISULTATO FINALE ===")
-    print(f"Circolari valide per l'anno scolastico corrente: {len(all_circolari)}")
+    print(f"Circolari negli ultimi 30 giorni: {len(all_circolari)}")
     
     # Stampa riepilogo
     for i, circ in enumerate(all_circolari, 1):
-        print(f"{i:2}. {circ['titolo'][:60]}... ({circ['data_pubblica'][:10]})")
+        data_str = circ['data_pubblica'][:10] if circ['data_pubblica'] else "N/D"
+        print(f"{i:2}. {data_str} - {circ['titolo'][:60]}...")
     
     # Inserisci nel database
     if all_circolari:
@@ -466,18 +266,37 @@ try:
                     supabase.table('circolari').insert(circ).execute()
                     print(f"  ✅ Inserita: {circ['titolo'][:60]}...")
                 except Exception as e:
-                    print(f"  ❌ Errore: {e}")
+                    print(f"  ❌ Errore inserimento: {str(e)[:100]}...")
+            
+            print(f"\n✅ Completato! Inserite {len(nuove_circolari)} nuove circolari")
         else:
-            print("Nessuna nuova circolare da inserire")
+            print("✅ Nessuna nuova circolare trovata")
+        
+        # Pulisci le circolari più vecchie di 30 giorni
+        print("\nPulizia circolari vecchie (>30 giorni)...")
+        deleted_count = 0
+        for existing in existing_response.data:
+            try:
+                if 'data_pubblica' in existing:
+                    data_existing = datetime.strptime(existing['data_pubblica'], "%Y-%m-%d %H:%M:%S")
+                    if data_existing < limite_30_giorni:
+                        supabase.table('circolari').delete().eq('titolo', existing['titolo']).execute()
+                        deleted_count += 1
+            except Exception as e:
+                print(f"  Errore eliminazione {existing.get('titolo', 'N/D')}: {str(e)[:100]}...")
+                continue
+        
+        if deleted_count > 0:
+            print(f"🗑️  Eliminate {deleted_count} circolari vecchie")
     else:
-        print("Nessuna circolare trovata")
+        print("Nessuna circolare trovata negli ultimi 30 giorni")
     
     driver.quit()
     
 except Exception as e:
     print(f"❌ Errore durante lo scraping: {e}")
     import traceback
-    print(traceback.format_exc())
+    traceback.print_exc()
     try:
         driver.quit()
     except:
