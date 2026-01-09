@@ -253,7 +253,7 @@ if 'search_query' not in st.session_state:
 tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
 tempo_rimanente = max(0, 30 - int(tempo_trascorso))
 
-# RIGA 277 (circa) CORRETTA - usando solo f-string
+# CORREZIONE 1: Rimosso .format() problematico e usato solo f-string
 st.markdown(f"""
 <div class="update-info">
     <div class="update-text">
@@ -265,7 +265,7 @@ st.markdown(f"""
         <button class="clear-search" onclick="clearSearch()">❌ Cancella</button>
     </div>
 </div>
-""", unsafe_allow_html=True)  # Rimosso .format() e corretto unsafe_allow_html=True
+""", unsafe_allow_html=True)
 
 st.markdown("""
 <script>
@@ -334,7 +334,9 @@ if supabase:
             for idx, row in df_display.iterrows():
                 data_pub = row['data_pubblicazione']
                 is_new = (oggi - data_pub).days < 7
-                data_pub_local = data_pub.replace(tzinfo=timezone.utc).astimezone()
+                
+                # CORREZIONE 2: Rimosso .replace() problematico, data_pub è già timezone-aware
+                data_pub_local = data_pub.astimezone()
                 
                 badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
                 
