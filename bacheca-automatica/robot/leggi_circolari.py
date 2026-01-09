@@ -64,6 +64,69 @@ def extract_date_from_text(data_text):
                         continue
     return None
 
+def scroll_page_to_load_all_circolari():
+    """Fa scrolling della pagina per caricare tutte le circolari"""
+    print("Inizio scrolling per caricare tutte le circolari...")
+    
+    last_height = driver.execute_script("return document.body.scrollHeight")
+    scroll_attempts = 0
+    max_attempts = 20  # Numero massimo di tentativi di scroll
+    last_element_count = 0
+    same_count_counter = 0
+    
+    while scroll_attempts < max_attempts:
+        # Trova gli elementi attuali
+        current_elements = driver.find_elements(By.CSS_SELECTOR, ".circolare-item")
+        current_count = len(current_elements)
+        
+        print(f"Tentativo {scroll_attempts + 1}: {current_count} circolari trovate")
+        
+        # Se il numero di elementi non è cambiato per 3 volte consecutive, probabilmente abbiamo caricato tutto
+        if current_count == last_element_count:
+            same_count_counter += 1
+            if same_count_counter >= 3:
+                print(f"Numero di circolari stabile a {current_count} per 3 tentativi consecutivi. Stop.")
+                break
+        else:
+            same_count_counter = 0
+            last_element_count = current_count
+        
+        # Fai scroll fino in fondo
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(2)  # Attendi il caricamento
+        
+        # Controlla se c'è un pulsante "Carica più" o simile
+        try:
+            load_more_button = driver.find_element(By.CSS_SELECTOR, ".load-more, .carica-altre, .more-button, button:contains('Carica')")
+            if load_more_button.is_displayed():
+                print("Trovato pulsante 'Carica più', clicco...")
+                driver.execute_script("arguments[0].scrollIntoView(true);", load_more_button)
+                time.sleep(1)
+                load_more_button.click()
+                time.sleep(3)
+        except:
+            pass  # Nessun pulsante "Carica più" trovato
+        
+        # Calcola nuova altezza dopo scroll
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            scroll_attempts += 1
+            print(f"Altezza non cambiata dopo scroll. Tentativo {scroll_attempts}/{max_attempts}")
+        else:
+            last_height = new_height
+            scroll_attempts = 0  # Reset se c'è stato un cambiamento
+        
+        time.sleep(1.5)
+    
+    # Final scroll to top
+    driver.execute_script("window.scrollTo(0, 0);")
+    time.sleep(1)
+    
+    final_elements = driver.find_elements(By.CSS_SELECTOR, ".circolare-item")
+    print(f"Scrolling completato. Totale circolari caricate: {len(final_elements)}")
+    
+    return final_elements
+
 try:
     oggi = datetime.now()
     
@@ -99,104 +162,70 @@ try:
     time.sleep(5)
     
     all_circolari = []
-    page_number = 1
     
-    while True:
-        print(f"Scansionando pagina {page_number}...")
-        
-        # Aspetta che le circolari siano caricate
-        time.sleep(3)
-        
-        # Trova tutti gli elementi delle circolari
-        circolari_elements = driver.find_elements(By.CSS_SELECTOR, ".circolare-item")
-        
-        if not circolari_elements:
-            print("Nessuna circolare trovata sulla pagina.")
-            break
-        
-        print(f"Trovate {len(circolari_elements)} circolari sulla pagina {page_number}")
-        
-        for elem in circolari_elements:
-            try:
-                # Estrai titolo, data e link
-                titolo_elem = elem.find_element(By.CSS_SELECTOR, ".circolare-titolo")
-                data_elem = elem.find_element(By.CSS_SELECTOR, ".circolare-data")
-                link_elem = elem.find_element(By.CSS_SELECTOR, "a")
-                
-                titolo = titolo_elem.text.strip()
-                data_testo = data_elem.text.strip()
-                link = link_elem.get_attribute("href")
-                
-                # Estrai la data
-                data_obj = extract_date_from_text(data_testo)
-                
-                if data_obj is None:
-                    print(f"Data non riconosciuta per '{titolo}': {data_testo}")
-                    data_obj = oggi
-                
-                # Controlla se la circolare è nell'anno scolastico corrente
-                if anno_scolastico_inizio <= data_obj <= anno_scolastico_fine:
-                    # Estrai URL PDF
-                    pdf_urls = []
-                    if link and link.endswith('.pdf'):
-                        pdf_urls.append(link)
-                    else:
-                        # Potrebbe esserci un link interno che porta ad un PDF
-                        # Controlla se ci sono link PDF nell'elemento
-                        try:
-                            pdf_links = elem.find_elements(By.CSS_SELECTOR, "a[href$='.pdf']")
-                            for pdf_link in pdf_links:
-                                href = pdf_link.get_attribute("href")
-                                if href:
-                                    pdf_urls.append(href)
-                        except:
-                            pass
-                    
-                    # Formatta la data per il database
-                    data_pubblica = data_obj.strftime("%Y-%m-%d %H:%M:%S")
-                    
-                    all_circolari.append({
-                        'titolo': titolo,
-                        'contenuto': "",
-                        'data_pubblica': data_pubblica,
-                        'pdf_url': ';;;'.join(pdf_urls) if pdf_urls else None
-                    })
-                    
-                    print(f"  ✓ {titolo} ({data_obj.strftime('%d/%m/%Y')}) - PDF: {len(pdf_urls)}")
-                
-            except Exception as e:
-                print(f"Errore processamento circolare: {e}")
-                continue
-        
-        # Controlla se c'è una pagina successiva
+    # Usa la funzione di scrolling per caricare TUTTE le circolari
+    circolari_elements = scroll_page_to_load_all_circolari()
+    
+    print(f"\nElaborazione delle {len(circolari_elements)} circolari caricate...")
+    
+    for idx, elem in enumerate(circolari_elements, 1):
         try:
-            next_button = driver.find_element(By.CSS_SELECTOR, ".pagination-next:not(.disabled), .next-page:not(.disabled)")
-            if next_button.is_enabled() and next_button.is_displayed():
-                # Scrolla fino al pulsante e clicca
-                driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
-                time.sleep(1)
-                next_button.click()
-                page_number += 1
-                time.sleep(3)  # Attendi il caricamento della nuova pagina
+            # Scrolla l'elemento in vista per sicurezza
+            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", elem)
+            time.sleep(0.5)
+            
+            # Estrai titolo, data e link
+            titolo_elem = elem.find_element(By.CSS_SELECTOR, ".circolare-titolo")
+            data_elem = elem.find_element(By.CSS_SELECTOR, ".circolare-data")
+            link_elem = elem.find_element(By.CSS_SELECTOR, "a")
+            
+            titolo = titolo_elem.text.strip()
+            data_testo = data_elem.text.strip()
+            link = link_elem.get_attribute("href")
+            
+            # Estrai la data
+            data_obj = extract_date_from_text(data_testo)
+            
+            if data_obj is None:
+                print(f"  [{idx}] Data non riconosciuta per '{titolo}': {data_testo}")
+                data_obj = oggi
+            
+            # Controlla se la circolare è nell'anno scolastico corrente
+            if anno_scolastico_inizio <= data_obj <= anno_scolastico_fine:
+                # Estrai URL PDF
+                pdf_urls = []
+                if link and link.endswith('.pdf'):
+                    pdf_urls.append(link)
+                else:
+                    # Cerca link PDF all'interno dell'elemento circolare
+                    try:
+                        pdf_links = elem.find_elements(By.CSS_SELECTOR, "a[href$='.pdf']")
+                        for pdf_link in pdf_links:
+                            href = pdf_link.get_attribute("href")
+                            if href:
+                                pdf_urls.append(href)
+                    except:
+                        pass
+                
+                # Formatta la data per il database
+                data_pubblica = data_obj.strftime("%Y-%m-%d %H:%M:%S")
+                
+                all_circolari.append({
+                    'titolo': titolo,
+                    'contenuto': "",
+                    'data_pubblica': data_pubblica,
+                    'pdf_url': ';;;'.join(pdf_urls) if pdf_urls else None
+                })
+                
+                print(f"  [{idx}] ✓ {titolo} ({data_obj.strftime('%d/%m/%Y')}) - PDF: {len(pdf_urls)}")
             else:
-                print("Nessuna altra pagina disponibile.")
-                break
+                print(f"  [{idx}] ✗ {titolo} ({data_obj.strftime('%d/%m/%Y')}) - FUORI ANNO SCOLASTICO")
+                
         except Exception as e:
-            print(f"Fine della paginazione o errore: {e}")
-            break
+            print(f"  [{idx}] Errore processamento circolare: {e}")
+            continue
     
     print(f"\nTotale circolari trovate per l'anno scolastico corrente: {len(all_circolari)}")
-    
-    # Rimuovi duplicati basati sul titolo
-    unique_circolari = []
-    seen_titles = set()
-    
-    for circ in all_circolari:
-        if circ['titolo'] not in seen_titles:
-            seen_titles.add(circ['titolo'])
-            unique_circolari.append(circ)
-    
-    print(f"Dopo rimozione duplicati: {len(unique_circolari)} circolari")
     
     # Ottieni le circolari esistenti dal database
     existing_response = supabase.table('circolari').select("titolo, data_pubblica").execute()
@@ -204,38 +233,45 @@ try:
     
     # Filtra solo le nuove circolari
     nuove_circolari = []
-    for circ in unique_circolari:
+    for circ in all_circolari:
         if circ['titolo'] not in existing_titles:
             nuove_circolari.append(circ)
     
     # Inserisci le nuove circolari
     if nuove_circolari:
+        print(f"\nInserimento di {len(nuove_circolari)} nuove circolari...")
         for circ in nuove_circolari:
             try:
                 supabase.table('circolari').insert(circ).execute()
-                print(f"Inserita: {circ['titolo']}")
+                print(f"  Inserita: {circ['titolo']}")
             except Exception as e:
-                print(f"Errore inserimento circolare '{circ['titolo']}': {e}")
-        print(f"\nInserite {len(nuove_circolari)} nuove circolari")
+                print(f"  Errore inserimento circolare '{circ['titolo']}': {e}")
+        print(f"\n✅ Inserite {len(nuove_circolari)} nuove circolari")
     else:
-        print("Nessuna nuova circolare trovata")
+        print("✅ Nessuna nuova circolare trovata")
     
     # Pulisci le circolari troppo vecchie (fuori dall'anno scolastico)
+    print("\nPulizia circolari fuori anno scolastico...")
+    deleted_count = 0
     for existing in existing_response.data:
         try:
             if 'data_pubblica' in existing:
                 data_existing = datetime.strptime(existing['data_pubblica'], "%Y-%m-%d %H:%M:%S")
                 if data_existing < anno_scolastico_inizio:
                     supabase.table('circolari').delete().eq('titolo', existing['titolo']).execute()
-                    print(f"Eliminata circolare fuori anno scolastico: {existing['titolo']}")
+                    deleted_count += 1
+                    print(f"  Eliminata: {existing['titolo']}")
         except Exception as e:
-            print(f"Errore eliminazione circolare: {e}")
+            print(f"  Errore eliminazione circolare: {e}")
             continue
+    
+    if deleted_count > 0:
+        print(f"🗑️  Eliminate {deleted_count} circolari fuori anno scolastico")
     
     driver.quit()
     
 except Exception as e:
-    print(f"Errore durante lo scraping: {e}")
+    print(f"❌ Errore durante lo scraping: {e}")
     import traceback
     print(traceback.format_exc())
     try:
