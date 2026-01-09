@@ -3,7 +3,7 @@ Scraper per scaricare le circolari dal sito della scuola
 DA MODIFICARE in base alla struttura reale del sito
 """
 
-import requests
+import requests  # IMPORT AGGIUNTO
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 import re
