@@ -4,4 +4,4 @@ pandas>=2.0.0
 python-dotenv>=1.0.0
 beautifulsoup4>=4.12.0
 requests>=2.31.0
-pytz>=2023.3  # Aggiunto per gestione timezone
+pytz>=2023.3
