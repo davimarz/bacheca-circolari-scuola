@@ -1,5 +1,3 @@
-[file name]: config.py
-[file content begin]
 """
 Configurazioni dell'applicazione Bacheca Circolari
 """
@@ -116,45 +114,4 @@ CONFIG = {
 DATE_FORMATS = {
     'display': '%d/%m/%Y',          # Visualizzazione: 15/01/2024
     'display_full': '%d/%m/%Y alle %H:%M',  # Con orario: 15/01/2024 alle 14:30
-    'database': '%Y-%m-%d %H:%M:%S', # Formato database SQL: 2024-01-15 14:30:00
-    'short': '%d/%m',               # Formato breve: 15/01
-    'year_month': '%Y-%m',          # Anno-mese: 2024-01
-    'filename': '%Y%m%d_%H%M%S',    # Per nomi file: 20240115_143000
-    'query_param': '%Y-%m-%d',      # Per parametri URL: 2024-01-15
-}
-
-# Configurazione periodi anno scolastico
-# Definisce i mesi di inizio e fine per ciascun anno scolastico
-ANNO_SCOLASTICO_PERIODI = {
-    'start_month': 9,   # Settembre
-    'start_day': 1,     # 1° settembre
-    'end_month': 8,     # Agosto
-    'end_day': 31,      # 31 agosto
-}
-
-# Configurazione regex per estrazione numeri circolari
-REGEX_PATTERNS = {
-    'circolare_number': r'N\.?\s*(\d+)',  # Pattern per estrarre N.123
-    'anno_scolastico': r'(\d{4})/(\d{2})', # Pattern per validare 2024/25
-    'date_italian': r'(\d{2})/(\d{2})/(\d{4})', # dd/mm/yyyy
-    'pdf_url': r'\.pdf$',  # Pattern per riconoscere URL PDF
-}
-
-# Messaggi di sistema
-MESSAGES = {
-    'empty_state': '📭 Nessuna circolare disponibile',
-    'loading': 'Caricamento in corso...',
-    'error_database': '❌ Errore di connessione al database',
-    'error_scraping': '❌ Errore durante lo scraping',
-    'success_update': '✅ Aggiornamento completato',
-    'new_circolare': 'Nuova circolare disponibile!',
-    'search_no_results': '🔍 Nessun risultato trovato',
-}
-
-# Configurazione responsive (breakpoints)
-RESPONSIVE = {
-    'mobile': 768,    # px - dispositivi mobili
-    'tablet': 1024,   # px - tablet
-    'desktop': 1200,  # px - desktop
-}
-[file content end]
+    'database': '%Y-%m-%d %H:%M:%S', # Formato database SQL: 2024-01-15 
