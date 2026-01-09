@@ -253,7 +253,6 @@ if 'search_query' not in st.session_state:
 tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
 tempo_rimanente = max(0, 30 - int(tempo_trascorso))
 
-# CORREZIONE 1: Rimosso .format() problematico e usato solo f-string
 st.markdown(f"""
 <div class="update-info">
     <div class="update-text">
@@ -335,7 +334,8 @@ if supabase:
                 data_pub = row['data_pubblicazione']
                 is_new = (oggi - data_pub).days < 7
                 
-                # CORREZIONE 2: Rimosso .replace() problematico, data_pub è già timezone-aware
+                # CORREZIONE: Usare astimezone() direttamente, senza replace()
+                # data_pub è già timezone-aware (UTC) grazie a pd.to_datetime(..., utc=True)
                 data_pub_local = data_pub.astimezone()
                 
                 badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
@@ -381,6 +381,8 @@ if supabase:
             
     except Exception as e:
         st.error(f"❌ Errore nel caricamento dei dati: {str(e)}")
+        # Per debugging
+        st.error(f"Tipo di errore: {type(e).__name__}")
 else:
     st.warning("⚠️ Impossibile connettersi al database.")
 
