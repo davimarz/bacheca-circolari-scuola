@@ -286,164 +286,215 @@ try:
             print("⚠️ Non riesco a trovare il link delle circolari")
             raise
     
-    print("⏳ Caricamento tabella circolari...")
+    print("⏳ Caricamento pagina circolari...")
     time.sleep(8)
     
-    # --- CERCA LA TABELLA DELLE CIRCOLARI ---
-    print("🔍 Cerco la tabella delle circolari...")
+    # --- DEBUG: SALVA SCREENSHOT E HTML PER VEDERE LA STRUTTURA ---
+    print("📸 Faccio screenshot per debug...")
+    driver.save_screenshot("debug_circolari.png")
+    print("✅ Screenshot salvato come debug_circolari.png")
     
-    # Prova diversi selettori per la tabella
-    table_selectors = [
-        "table",
-        ".x-grid-table",
-        ".table",
-        "#gridview",
-        "[role='grid']"
+    # Salva anche l'HTML per analisi
+    with open("debug_page.html", "w", encoding="utf-8") as f:
+        f.write(driver.page_source)
+    print("✅ HTML salvato come debug_page.html")
+    
+    # --- CERCA GLI ELEMENTI DELLE CIRCOLARI IN MODO PIÙ FLESSIBILE ---
+    print("🔍 Cerco le circolari...")
+    
+    # Prova diversi approcci per trovare le circolari
+    circolari_trovate = []
+    
+    # APPROCCIO 1: Cerca per testo "CIRCOLARE N."
+    try:
+        elementi_circolare = driver.find_elements(By.XPATH, "//*[contains(text(), 'CIRCOLARE N.') or contains(text(), 'Circolare n.')]")
+        print(f"✅ Trovati {len(elementi_circolare)} elementi con 'CIRCOLARE N.'")
+        
+        for elem in elementi_circolare:
+            # Prendi l'elemento genitore più probabile
+            try:
+                parent = elem.find_element(By.XPATH, "./ancestor::tr[1]")
+                if parent not in circolari_trovate:
+                    circolari_trovate.append(parent)
+            except:
+                try:
+                    parent = elem.find_element(By.XPATH, "./ancestor::div[1]")
+                    if parent not in circolari_trovate:
+                        circolari_trovate.append(parent)
+                except:
+                    if elem not in circolari_trovate:
+                        circolari_trovate.append(elem)
+    except Exception as e:
+        print(f"⚠️ Errore ricerca per testo: {e}")
+    
+    # APPROCCIO 2: Cerca tutte le righe di tabella
+    try:
+        righe_tabella = driver.find_elements(By.TAG_NAME, "tr")
+        print(f"✅ Trovate {len(righe_tabella)} righe di tabella")
+        
+        # Filtra le righe che sembrano circolari (hanno testo significativo)
+        for riga in righe_tabella:
+            testo = riga.text.strip()
+            if testo and len(testo) > 50:  # Testo lungo = probabile circolare
+                if riga not in circolari_trovate:
+                    circolari_trovate.append(riga)
+    except Exception as e:
+        print(f"⚠️ Errore ricerca righe tabella: {e}")
+    
+    # APPROCCIO 3: Cerca elementi con classi comuni
+    class_selectors = [
+        ".x-grid-row",
+        ".list-item",
+        ".item",
+        ".row",
+        ".circolare-item",
+        ".messaggio-item"
     ]
     
-    tabella = None
-    for selector in table_selectors:
+    for selector in class_selectors:
         try:
-            tabella = driver.find_element(By.CSS_SELECTOR, selector)
-            print(f"✅ Trovata tabella con selettor e: {selector}")
-            break
+            elementi = driver.find_elements(By.CSS_SELECTOR, selector)
+            if elementi:
+                print(f"✅ Trovati {len(elementi)} elementi con selettore: {selector}")
+                for elem in elementi:
+                    if elem not in circolari_trovate:
+                        circolari_trovate.append(elem)
         except:
             continue
     
-    if not tabella:
-        print("⚠️ Non trovo la tabella, cerco righe direttamente")
+    # APPROCCIO 4: Cerca per date (pattern DD/MM/YYYY)
+    try:
+        elementi_data = driver.find_elements(By.XPATH, "//*[contains(text(), '/202')]")
+        print(f"✅ Trovati {len(elementi_data)} elementi con date")
+        
+        for elem in elementi_data:
+            try:
+                parent = elem.find_element(By.XPATH, "./ancestor::tr[1]")
+                if parent not in circolari_trovate:
+                    circolari_trovate.append(parent)
+            except:
+                continue
+    except Exception as e:
+        print(f"⚠️ Errore ricerca per date: {e}")
     
-    # --- TROVA TUTTE LE RIGHE DELLA TABELLA ---
-    righe = []
+    numero_totale = len(circolari_trovate)
+    print(f"\n🎯 TOTALE CIRCOLARI TROVATE: {numero_totale}")
     
-    if tabella:
-        # Trova tutte le righe della tabella
-        righe = tabella.find_elements(By.CSS_SELECTOR, "tr")
-        # Rimuovi l'header se presente (prima riga)
-        if righe and ("DATA" in righe[0].text or "DATA" in righe[0].get_attribute('innerHTML')):
-            righe = righe[1:]
-    else:
-        # Se non trova tabella, cerca direttamente le righe
-        righe = driver.find_elements(By.CSS_SELECTOR, "tr, .x-grid-row, .list-item")
+    if numero_totale == 0:
+        print("❌ Nessuna circolare trovata. Controlla gli screenshot di debug.")
+        print("   File creati: debug_circolari.png e debug_page.html")
+        exit(1)
     
-    numero_totale = len(righe)
-    print(f"✅ Trovate {numero_totale} circolari.")
+    # Stampa anteprima delle prime 5 circolari
+    print("\n📋 Anteprima prime 5 circolari:")
+    for i, circ in enumerate(circolari_trovate[:5]):
+        print(f"  {i+1}. {circ.text[:100]}...")
     
     # --- CICLO PER OGNI CIRCOLARE ---
     circolari_elaborate = 0
     
-    for i in range(numero_totale):
+    for i, circolare_elem in enumerate(circolari_trovate):
         try:
-            # Ricarica le righe per evitare elementi stantii
-            if tabella:
-                righe_fresche = tabella.find_elements(By.CSS_SELECTOR, "tr")
-                if righe_fresche and ("DATA" in righe_fresche[0].text):
-                    righe_fresche = righe_fresche[1:]
-            else:
-                righe_fresche = driver.find_elements(By.CSS_SELECTOR, "tr, .x-grid-row, .list-item")
+            print(f"\n{'='*60}")
+            print(f"🔄 [{i+1}/{numero_totale}] Elaboro circolare...")
             
-            if i >= len(righe_fresche):
-                break
-                
-            riga_corrente = righe_fresche[i]
-            
-            # ESTRAI LE COLONNE DELLA RIGA
-            colonne = riga_corrente.find_elements(By.TAG_NAME, "td")
-            
-            # Se non trova td, prova con altri elementi
-            if not colonne:
-                colonne = riga_corrente.find_elements(By.CSS_SELECTOR, "div, span")
-            
-            # Se non ci sono abbastanza colonne, salta
-            if len(colonne) < 5:
-                print(f"⚠️ Riga {i+1}: Troppo poche colonne ({len(colonne)}), salto")
+            # Estrai il testo della circolare
+            testo_circolare = circolare_elem.text.strip()
+            if not testo_circolare or len(testo_circolare) < 20:
+                print("   ⚠️  Testo troppo corto, salto")
                 continue
             
-            # COLONNA 3: TITOLO DELLA CIRCOLARE (es: "CIRCOLARE N.160 OGGETTO: ...")
-            titolo = colonne[3].text.strip()
+            print(f"   📄 Testo (primi 150 caratteri):")
+            print(f"      {testo_circolare[:150]}...")
             
-            # COLONNA 4: FILE/ALLEGATI
-            cella_file = colonne[4]
+            # Estrai il titolo (prima riga o parte significativa)
+            titolo = ""
+            lines = testo_circolare.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and len(line) > 10:
+                    titolo = line[:200]  # Limita la lunghezza
+                    break
             
-            print(f"\n🔄 [{i+1}] Apro circolare: {titolo[:80]}...")
+            if not titolo:
+                titolo = testo_circolare[:100]
             
-            # VARIABILI PER I DATI DA ESTRARRE
-            contenuto_completo = ""
-            data_pubblicazione = None
+            print(f"   📌 Titolo estratto: {titolo[:80]}...")
             
-            # CLICCA SULLA CIRCOLARE PER VEDERE IL CONTENUTO COMPLETO
+            # Ora clicca sulla circolare per vedere il contenuto completo
             try:
-                # Salva URL corrente per poter tornare
-                url_lista = driver.current_url
+                print("   🔍 Apro circolare per estrarre contenuto completo...")
                 
-                # Clicca sulla circolare per aprirla (colonna del titolo)
-                colonne[3].click()
+                # Prova a cliccare sull'elemento
+                circolare_elem.click()
                 time.sleep(4)
                 
-                # Estrai il CONTENUTO COMPLETO della circolare
+                # Estrai il contenuto completo
+                contenuto_completo = ""
+                
+                # Prova diversi selettori per il contenuto
                 contenuto_selectors = [
-                    ".circolare-contenuto",
-                    ".contenuto",
-                    ".messaggio-contenuto",
-                    ".content",
-                    ".body",
-                    ".testo",
-                    "div[class*='contenuto']",
-                    "div[class*='messaggio']",
+                    "body",
                     ".x-panel-body",
+                    ".content",
+                    ".contenuto",
+                    ".testo",
                     "#content",
-                    "div.x-grid-item-container"
+                    "div[class*='contenuto']",
+                    "div[class*='messaggio']"
                 ]
                 
                 for selector in contenuto_selectors:
                     try:
                         elemento = driver.find_element(By.CSS_SELECTOR, selector)
-                        contenuto_completo = elemento.text
-                        if contenuto_completo and len(contenuto_completo) > 100:
-                            print(f"   ✅ Contenuto estratto con selettore: {selector}")
-                            break
+                        testo = elemento.text.strip()
+                        if testo and len(testo) > len(contenuto_completo):
+                            contenuto_completo = testo
                     except:
                         continue
                 
-                # Se non trova selettori specifici, prova con tutto il body
-                if not contenuto_completo or len(contenuto_completo) < 100:
+                # Se il contenuto è troppo corto, prova a prendere tutto il body
+                if len(contenuto_completo) < 100:
                     try:
                         body = driver.find_element(By.TAG_NAME, "body")
-                        contenuto_completo = body.text
-                        print("   ✅ Contenuto estratto dal body")
+                        contenuto_completo = body.text.strip()
                     except:
-                        print("   ⚠️  Non riesco ad estrarre il contenuto")
+                        pass
                 
-                # ORA ESTRAI LA DATA DI PUBBLICAZIONE DAL CONTENUTO
                 if contenuto_completo:
+                    print(f"   ✅ Contenuto estratto ({len(contenuto_completo)} caratteri)")
+                    
+                    # Estrai la data dal contenuto
                     data_pubblicazione = estrai_data_dal_testo(contenuto_completo)
                     
                     if data_pubblicazione:
-                        print(f"   📅 Data pubblicazione estratta dal contenuto: {data_pubblicazione.strftime('%d/%m/%Y')}")
+                        print(f"   📅 Data estratta dal contenuto: {data_pubblicazione.strftime('%d/%m/%Y')}")
                     else:
                         print("   ⚠️  Data non trovata nel contenuto")
+                        # Prova a cercare nel testo originale
+                        data_pubblicazione = estrai_data_dal_testo(testo_circolare)
+                        if data_pubblicazione:
+                            print(f"   📅 Data estratta dal titolo: {data_pubblicazione.strftime('%d/%m/%Y')}")
                 else:
-                    print("   ⚠️  Nessun contenuto da analizzare")
+                    print("   ⚠️  Contenuto non estratto")
+                    contenuto_completo = testo_circolare
+                    data_pubblicazione = estrai_data_dal_testo(testo_circolare)
+                    if data_pubblicazione:
+                        print(f"   📅 Data estratta dal titolo: {data_pubblicazione.strftime('%d/%m/%Y')}")
                 
-                # Torna indietro alla lista
-                driver.get(url_lista)
-                time.sleep(4)
-                
-                # Ricarica la tabella
-                if tabella:
-                    tabella = driver.find_element(By.CSS_SELECTOR, table_selectors[0])
-                    righe_fresche = tabella.find_elements(By.CSS_SELECTOR, "tr")
-                    if righe_fresche and ("DATA" in righe_fresche[0].text):
-                        righe_fresche = righe_fresche[1:]
+                # Torna indietro
+                driver.back()
+                time.sleep(3)
                 
             except Exception as e:
-                print(f"   ❌ Errore apertura circolare: {e}")
-                # Se c'è errore, ricarica la pagina
-                driver.get(driver.current_url)
-                time.sleep(5)
-                continue
+                print(f"   ⚠️  Errore apertura circolare: {e}")
+                # Usa il testo che abbiamo già
+                contenuto_completo = testo_circolare
+                data_pubblicazione = estrai_data_dal_testo(testo_circolare)
+                if data_pubblicazione:
+                    print(f"   📅 Data estratta: {data_pubblicazione.strftime('%d/%m/%Y')}")
             
-            # ===> FILTRO 30 GIORNI (USANDO LA DATA ESTRATTA DAL CONTENUTO) <===
+            # ===> FILTRO 30 GIORNI <===
             if not data_pubblicazione:
                 print("   ⚠️  Data non estratta, salto questa circolare")
                 continue
@@ -451,157 +502,56 @@ try:
             giorni_passati = (datetime.now() - data_pubblicazione).days
             
             if giorni_passati > 30:
-                print(f"⏹️  INCONTRATA CIRCOLARE VECCHIA: {data_pubblicazione.strftime('%d/%m/%Y')} (Vecchia di {giorni_passati} giorni)")
-                print(f"🛑 Fermo lo scaricamento. Ho elaborato {circolari_elaborate} circolari recenti.")
-                # Esci completamente dal ciclo
+                print(f"⏹️  INCONTRATA CIRCOLARE VECCHIA: {data_pubblicazione.strftime('%d/%m/%Y')} ({giorni_passati} giorni)")
+                print(f"🛑 Fermo lo scaricamento. Elaborate {circolari_elaborate} circolari recenti.")
                 break
             
-            # SE SIAMO QUI, LA CIRCOLARE È RECENTE (<30 giorni) -> PROCEDIAMO
+            print(f"   ✅ Circolare recente ({giorni_passati} giorni fa)")
             circolari_elaborate += 1
             
-            print(f"   ✅ Circolare recente ({giorni_passati} giorni)")
+            # CERCA ALLEGATI (semplificato per ora)
+            print("   🔍 Cerco allegati...")
+            # Qui puoi aggiungere la logica per cercare allegati nell'elemento
             
-            # CONTROLLA SE CI SONO ALLEGATI
-            ha_allegati = False
-            public_links_string = ""
-            
-            # Controlla se la cella file ha contenuto
-            if (cella_file.text.strip() != "" or 
-                len(cella_file.find_elements(By.TAG_NAME, "div")) > 0 or
-                len(cella_file.find_elements(By.TAG_NAME, "a")) > 0 or
-                len(cella_file.find_elements(By.TAG_NAME, "img")) > 0):
-                ha_allegati = True
-            
-            # GESTIONE ALLEGATI
-            if ha_allegati:
-                print("   📎 Scarico allegati...")
-                try:
-                    # Salva l'URL corrente per poter tornare indietro
-                    url_corrente = driver.current_url
-                    
-                    # Clicca sulla cella degli allegati
-                    cella_file.click()
-                    time.sleep(3)
-                    
-                    # Cerca link PDF nella pagina corrente
-                    links_pdf = driver.find_elements(By.PARTIAL_LINK_TEXT, ".pdf")
-                    if not links_pdf:
-                        # Prova con altri selettori per PDF
-                        links_pdf = driver.find_elements(By.CSS_SELECTOR, 
-                            "a[href$='.pdf'], " +
-                            "a[href*='download'], " +
-                            "a[href*='allegato'], " +
-                            "a[href*='file'], " +
-                            "a[href*='document']"
-                        )
-                    
-                    lista_url_pubblici = []
-                    
-                    for index_file, link in enumerate(links_pdf):
-                        try:
-                            print(f"      ⬇️ Download allegato {index_file+1}...")
-                            
-                            # Clicca sul link per avviare il download
-                            link.click()
-                            time.sleep(2)
-                            
-                            # Attendi il download
-                            file_scaricato = attendi_e_trova_file()
-                            
-                            if file_scaricato:
-                                # Carica su Supabase Storage
-                                nome_semplice = f"circolare_{data_pubblicazione.strftime('%Y%m%d')}_{index_file + 1}.pdf"
-                                nome_unico = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{nome_semplice}"
-                                
-                                with open(file_scaricato, "rb") as f:
-                                    print("      ⬆️ Upload su Cloud...")
-                                    supabase.storage.from_("documenti").upload(
-                                        path=nome_unico,
-                                        file=f,
-                                        file_options={"content-type": "application/pdf"}
-                                    )
-                                
-                                # Ottieni URL pubblico
-                                url_pubblico = supabase.storage.from_("documenti").get_public_url(nome_unico)
-                                lista_url_pubblici.append(url_pubblico)
-                                
-                                # Chiudi il file e rimuovilo dal disco
-                                f.close()
-                                os.remove(file_scaricato)
-                                print(f"      ✅ Allegato {index_file+1} caricato: {nome_unico}")
-                        except Exception as e:
-                            print(f"      ⚠️ Errore download allegato {index_file+1}: {e}")
-                            continue
-                    
-                    public_links_string = ";;;".join(lista_url_pubblici)
-                    
-                    # TORNA ALLA LISTA DELLE CIRCOLARI
-                    print("   🔙 Torno alla lista delle circolari...")
-                    driver.get(url_corrente)
-                    time.sleep(5)
-                    
-                except Exception as e:
-                    print(f"   ⚠️ Errore nella gestione allegati: {e}")
-                    # In caso di errore, torna alla lista
-                    try:
-                        driver.back()
-                        time.sleep(3)
-                    except:
-                        pass
-            
-            # SALVATAGGIO NEL DATABASE (CON DATA ESTRATTA DAL CONTENUTO)
+            # SALVATAGGIO NEL DATABASE
             try:
                 # Formatta la data per il database
                 data_pubblica_db = data_pubblicazione.strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Crea il contenuto per il database
-                if contenuto_completo:
-                    contenuto_db = contenuto_completo
-                else:
-                    contenuto_db = f"Titolo: {titolo}\nData estratta dal contenuto: {data_pubblicazione.strftime('%d/%m/%Y')}"
-                
-                # Controlla se la circolare esiste già (per titolo e data)
+                # Controlla se la circolare esiste già
                 res = supabase.table('circolari').select("*").eq('titolo', titolo).eq('data_pubblica', data_pubblica_db).execute()
                 
                 if not res.data:
                     # Inserisci nuova circolare
                     supabase.table('circolari').insert({
                         "titolo": titolo,
-                        "contenuto": contenuto_db,
+                        "contenuto": contenuto_completo,
                         "data_pubblica": data_pubblica_db,
-                        "pdf_url": public_links_string
+                        "pdf_url": ""  # Per ora vuoto, puoi aggiungere la logica allegati
                     }).execute()
                     print("   ✅ Circolare salvata nel database.")
-                    print(f"   📅 Data pubblicazione: {data_pubblica_db[:10]}")
                 else:
-                    # Aggiorna circolare esistente (solo allegati se nuovi)
-                    if public_links_string and not res.data[0].get('pdf_url'):
-                        supabase.table('circolari').update({"pdf_url": public_links_string}).eq('id', res.data[0]['id']).execute()
-                        print("   🔄 Allegati aggiunti.")
-                    else:
-                        print("   💤 Circolare già presente nel database.")
-                        
+                    print("   💤 Circolare già presente nel database.")
+                    
             except Exception as e:
-                print(f"   ⚠️ Errore nel salvataggio database: {e}")
+                print(f"   ⚠️  Errore salvataggio database: {e}")
                 
         except Exception as e:
-            print(f"⚠️ Errore nell'elaborazione riga {i+1}: {e}")
+            print(f"⚠️ Errore elaborazione circolare {i+1}: {e}")
             continue
     
-    print(f"\n🎉 Elaborazione completata. Circolari recenti elaborate: {circolari_elaborate}")
-    
-    # RIEPILOGO FINALE
-    print(f"\n📊 RIEPILOGO FINALE:")
-    print(f"   • Circolari totali trovate in tabella: {numero_totale}")
-    print(f"   • Circolari recenti (<30gg) elaborate: {circolari_elaborate}")
-    print(f"   • Date estratte dal CONTENUTO delle circolari")
+    print(f"\n{'='*60}")
+    print(f"🎉 ELABORAZIONE COMPLETATA")
+    print(f"   • Circolari trovate: {numero_totale}")
+    print(f"   • Circolari recenti elaborate: {circolari_elaborate}")
+    print(f"   • Circolari vecchie scartate: {max(0, numero_totale - circolari_elaborate)}")
     
     # AGGIORNA NUOVAMENTE LE DATE PER VERIFICA FINALE
     print("\n🔄 Verifica finale date dal contenuto...")
     aggiorna_date_dal_contenuto()
 
 except Exception as e:
-    print(f"❌ ERRORE CRITICO: {e}")
+    print(f"\n❌ ERRORE CRITICO: {e}")
     import traceback
     traceback.print_exc()
 
@@ -613,7 +563,7 @@ finally:
         try:
             os.remove(f)
         except:
-            pass
+        pass
     
     # Rimuovi la cartella se è vuota
     try:
@@ -628,4 +578,4 @@ finally:
     except:
         pass
 
-print("✅ Robot completato con successo!")
+print("✅ Robot completato!")
