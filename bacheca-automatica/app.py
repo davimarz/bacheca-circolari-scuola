@@ -335,6 +335,28 @@ st.markdown("""
         font-size: 0.85rem;
         border-top: 1px solid #e8e2d6;
     }
+    
+    /* Miglioramenti per input e select */
+    select.anno-select-streamlit {
+        padding: 8px 12px;
+        border: 1px solid #c8d8e0;
+        border-radius: 8px;
+        background-color: white;
+        color: #4a5a6a;
+        font-size: 0.95rem;
+        font-weight: 500;
+        width: 120px;
+    }
+    
+    input.search-input-streamlit {
+        padding: 10px 16px;
+        border: 1px solid #d8e2e8;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        width: 100%;
+        background-color: white;
+        color: #4a5a6a;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -353,7 +375,7 @@ def get_anno_scolastico_dates(anno_scolastico):
         # Inizio: 1 settembre dell'anno di inizio
         data_inizio = datetime(anno_inizio, 9, 1)
         # Fine: 31 agosto dell'anno successivo (anno_inizio + 1)
-        data_fine = datetime(anno_inizio + 1, 8, 31)
+        data_fine = datetime(anno_inizio + 1, 8, 31, 23, 59, 59)  # Fino alla fine della giornata
         
         # Converti in UTC timezone per compatibilità
         data_inizio_utc = data_inizio.replace(tzinfo=timezone.utc)
@@ -364,7 +386,7 @@ def get_anno_scolastico_dates(anno_scolastico):
         # Fallback: anno corrente con UTC
         anno_corrente = datetime.now().year
         data_inizio = datetime(anno_corrente, 9, 1).replace(tzinfo=timezone.utc)
-        data_fine = datetime(anno_corrente + 1, 8, 31).replace(tzinfo=timezone.utc)
+        data_fine = datetime(anno_corrente + 1, 8, 31, 23, 59, 59).replace(tzinfo=timezone.utc)
         return data_inizio, data_fine
 
 def normalize_date(date_obj):
@@ -440,101 +462,73 @@ if 'anno_scolastico_selezionato' not in st.session_state:
     st.session_state.anno_scolastico_selezionato = ANNO_SCOLASTICO_DEFAULT
 
 # =============================================
-# CONTENITORE SUPERIORE CON CONTROLLI
+# CONTENITORE SUPERIORE CON CONTROLLI - VERSIONE STREAMLIT
 # =============================================
-st.markdown('<div class="top-container">', unsafe_allow_html=True)
 
-# Prima riga: Contatore aggiornamento + Selettore anno scolastico
-tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
-tempo_rimanente = max(0, UPDATE_INTERVAL - int(tempo_trascorso))
-
-# Crea opzioni per il dropdown anni scolastici
-anno_options_html = ""
-for anno in ANNI_SCOLASTICI:
-    selected = "selected" if st.session_state.anno_scolastico_selezionato == anno else ""
-    anno_options_html += f'<option value="{anno}" {selected}>{anno}</option>'
-
-st.markdown(f"""
-<div class="update-info-row">
-    <div class="update-info">
-        🔄 Prossimo aggiornamento automatico tra: <strong>{tempo_rimanente} minuti</strong>
-    </div>
+with st.container():
+    st.markdown('<div class="top-container">', unsafe_allow_html=True)
     
-    <div class="anno-scolastico-container">
-        <span class="anno-label">Anno Scolastico:</span>
-        <select id="annoSelect" class="anno-select" onchange="cambiaAnnoScolastico()">
-            {anno_options_html}
-        </select>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# Seconda riga: Barra di ricerca
-search_value = st.session_state.search_query if 'search_query' in st.session_state else ""
-st.markdown(f"""
-<div class="search-row">
-    <div class="search-container">
-        <input type="text" id="searchInput" class="search-input" placeholder="Cerca per numero o testo..." value="{search_value}" onkeydown="if(event.keyCode==13) searchCircolari()">
-        <button class="search-button" onclick="searchCircolari()">🔍 Cerca</button>
-        <button class="clear-search" onclick="clearSearch()">❌ Cancella</button>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown('</div>', unsafe_allow_html=True)  # Chiusura top-container
-
-# =============================================
-# JAVASCRIPT PER INTERAZIONI
-# =============================================
-st.markdown("""
-<script>
-function searchCircolari() {
-    var searchInput = document.getElementById('searchInput');
-    var query = searchInput.value;
+    # Prima riga: Contatore aggiornamento (NASCOSTO come richiesto) + Selettore anno scolastico
+    col1, col2 = st.columns([3, 1])
     
-    if (query.trim() !== '') {
-        // Mantieni anche l'anno scolastico nell'URL
-        var currentUrl = new URL(window.location);
-        currentUrl.searchParams.set('search', query);
-        window.location.href = currentUrl.toString();
-    }
-}
-
-function clearSearch() {
-    // Rimuovi solo il parametro search, mantieni anno scolastico
-    var currentUrl = new URL(window.location);
-    currentUrl.searchParams.delete('search');
-    window.location.href = currentUrl.toString();
-}
-
-function cambiaAnnoScolastico() {
-    var select = document.getElementById('annoSelect');
-    var annoSelezionato = select.value;
+    with col1:
+        # Contatore aggiornamento NASCOSTO - solo logica senza visualizzazione
+        tempo_trascorso = (datetime.now(timezone.utc) - st.session_state.last_update).seconds / 60
+        tempo_rimanente = max(0, UPDATE_INTERVAL - int(tempo_trascorso))
+        # Nascondiamo completamente il contatore come richiesto
+        # st.markdown(f'<div class="update-info">🔄 Prossimo aggiornamento automatico tra: <strong>{tempo_rimanente} minuti</strong></div>', unsafe_allow_html=True)
     
-    // Aggiungi l'anno scolastico come parametro URL
-    var url = new URL(window.location);
-    url.searchParams.set('anno', annoSelezionato);
-    // Rimuovi la ricerca quando cambi anno
-    url.searchParams.delete('search');
-    window.location.href = url.toString();
-}
-</script>
-""", unsafe_allow_html=True)
-
-# =============================================
-# GESTIONE PARAMETRI URL
-# =============================================
-query_params = st.query_params
-
-# Gestione anno scolastico
-if 'anno' in query_params:
-    anno_url = query_params['anno']
-    if anno_url in ANNI_SCOLASTICI:
-        st.session_state.anno_scolastico_selezionato = anno_url
-
-# Gestione ricerca
-if 'search' in query_params:
-    st.session_state.search_query = query_params['search']
+    with col2:
+        # Selettore anno scolastico usando STREAMLIT component (non HTML)
+        st.markdown('<div class="anno-scolastico-container">', unsafe_allow_html=True)
+        st.markdown('<span class="anno-label">Anno Scolastico:</span>', unsafe_allow_html=True)
+        
+        # Usa selectbox di Streamlit invece di HTML
+        anno_selezionato = st.selectbox(
+            "Seleziona anno scolastico",
+            ANNI_SCOLASTICI,
+            index=ANNI_SCOLASTICI.index(st.session_state.anno_scolastico_selezionato),
+            label_visibility="collapsed",
+            key="anno_selectbox"
+        )
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Aggiorna session state se cambia la selezione
+        if anno_selezionato != st.session_state.anno_scolastico_selezionato:
+            st.session_state.anno_scolastico_selezionato = anno_selezionato
+            st.session_state.search_query = ""  # Resetta la ricerca quando cambia anno
+            st.rerun()
+    
+    # Seconda riga: Barra di ricerca usando componenti Streamlit
+    st.markdown('<div class="search-row">', unsafe_allow_html=True)
+    
+    col_search1, col_search2, col_search3 = st.columns([3, 1, 1])
+    
+    with col_search1:
+        # Input di ricerca
+        search_query = st.text_input(
+            "Cerca per numero o testo...",
+            value=st.session_state.search_query,
+            key="search_input",
+            label_visibility="collapsed",
+            placeholder="Cerca per numero o testo..."
+        )
+    
+    with col_search2:
+        # Pulsante cerca
+        if st.button("🔍 Cerca", key="search_button", use_container_width=True):
+            st.session_state.search_query = search_query
+            st.rerun()
+    
+    with col_search3:
+        # Pulsante cancella
+        if st.button("❌ Cancella", key="clear_button", use_container_width=True):
+            st.session_state.search_query = ""
+            st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)  # Chiusura top-container
 
 # =============================================
 # CONNESSIONE AL DATABASE E FILTRI - VERSIONE CORRETTA
@@ -567,7 +561,8 @@ if supabase:
             st.session_state.anno_scolastico_selezionato
         )
         
-        # Carica TUTTE le circolari
+        # MODIFICA CRITICA: Carica TUTTE le circolari SENZA limite
+        # Il filtro per anno scolastico verrà applicato dopo in Python
         response = supabase.table('circolari')\
             .select("*")\
             .execute()
@@ -595,17 +590,25 @@ if supabase:
             df['numero_circolare'] = df['titolo'].apply(extract_circolare_number)
             
             # CORREZIONE CRITICA: Normalizza tutte le date in UTC
-            # Assicurati che tutte le date in df siano in UTC
             df['data_pubblicazione'] = df['data_pubblicazione'].apply(
                 lambda x: normalize_date(x) if pd.notna(x) else datetime.now(timezone.utc)
             )
             
+            # DEBUG: Mostra informazioni sul periodo
+            st.markdown(f"""
+            <div style="text-align: center; color: #6a7b8c; font-size: 0.9rem; margin-bottom: 1rem;">
+                Visualizzazione circolari per l'anno scolastico <strong>{st.session_state.anno_scolastico_selezionato}</strong><br>
+                (dal {data_inizio_anno.strftime('%d/%m/%Y')} al {data_fine_anno.strftime('%d/%m/%Y')})
+            </div>
+            """, unsafe_allow_html=True)
+            
             # FILTRO ANNO SCOLASTICO: mantieni solo circolari tra 1 settembre e 31 agosto
-            # Tutte le date ora sono in UTC
-            df_filtered_by_year = df[
+            # CORREZIONE: Usa confronti diretti senza problemi di timezone
+            mask_anno_scolastico = (
                 (df['data_pubblicazione'] >= data_inizio_anno) & 
                 (df['data_pubblicazione'] <= data_fine_anno)
-            ].copy()
+            )
+            df_filtered_by_year = df[mask_anno_scolastico].copy()
             
             # FILTRO RICERCA
             if st.session_state.search_query:
@@ -633,32 +636,44 @@ if supabase:
             
             # VISUALIZZAZIONE CIRCOLARI
             if not df_display.empty:
+                # Ordina per numero circolare decrescente (le più recenti prima)
                 df_display = df_display.sort_values('numero_circolare', ascending=False)
+                
+                # Contatore circolari
+                st.markdown(f"""
+                <div style="text-align: right; color: #8a9aab; font-size: 0.85rem; margin-bottom: 1rem;">
+                    Totale: {len(df_display)} circolari
+                </div>
+                """, unsafe_allow_html=True)
                 
                 for idx, row in df_display.iterrows():
                     data_pub = row['data_pubblicazione']
                     oggi_utc = datetime.now(timezone.utc)
                     
                     # Determina se è nuova (< 7 giorni)
-                    # Assicurati che entrambe le date siano in UTC
-                    if hasattr(data_pub, 'tzinfo') and data_pub.tzinfo is not None:
-                        diff_giorni = (oggi_utc - data_pub).days
-                    else:
-                        data_pub_utc = normalize_date(data_pub)
-                        diff_giorni = (oggi_utc - data_pub_utc).days
-                    
+                    diff_giorni = (oggi_utc - data_pub).days
                     is_new = diff_giorni < 7
                     
                     data_pub_safe = safe_convert_to_local_date(data_pub)
                     
-                    badge_html = f'<span class="badge badge-{"new" if is_new else "old"}">{"NUOVA" if is_new else "ARCHIVIO"}</span>'
+                    # Crea HTML per la card - ESCAPING dei caratteri speciali
+                    titolo_pulito = str(row['titolo']).strip()
+                    # Escape HTML special characters per sicurezza
+                    titolo_safe = (titolo_pulito
+                                  .replace('&', '&amp;')
+                                  .replace('<', '&lt;')
+                                  .replace('>', '&gt;')
+                                  .replace('"', '&quot;')
+                                  .replace("'", '&#x27;'))
+                    
+                    badge_class = "new" if is_new else "old"
+                    badge_text = "NUOVA" if is_new else "ARCHIVIO"
                     
                     numero_html = ""
                     if row['numero_circolare'] > 0:
                         numero_html = f'<span class="circolare-number">N.{row["numero_circolare"]}</span>'
                     
-                    titolo_pulito = str(row['titolo']).strip()
-                    
+                    # Costruisci la card
                     card_html = f'''
                     <div class="circolare-card">
                         <div class="circolare-header">
@@ -666,10 +681,11 @@ if supabase:
                             <span class="circolare-date">📅 Pubblicata il {data_pub_safe.strftime('%d/%m/%Y')}</span>
                         </div>
                         <div class="circolare-title">
-                            {titolo_pulito} {badge_html}
+                            {titolo_safe} <span class="badge badge-{badge_class}">{badge_text}</span>
                         </div>
                     '''
                     
+                    # Aggiungi pulsanti documenti se presenti
                     if 'pdf_url' in row and pd.notna(row['pdf_url']) and str(row['pdf_url']).strip():
                         urls = str(row['pdf_url']).split(';;;')
                         valid_urls = [url.strip() for url in urls if url.strip()]
@@ -683,11 +699,15 @@ if supabase:
                                     url = f"{base}/storage/v1/object/public/documenti/{urllib.parse.quote(url)}"
                                 
                                 if url:
-                                    card_html += f'<a href="{url}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
+                                    # Escape URL per sicurezza
+                                    url_safe = url.replace('"', '&quot;').replace("'", '&#x27;')
+                                    card_html += f'<a href="{url_safe}" target="_blank" class="doc-button">📄 Documento {i+1}</a>'
                             
                             card_html += '</div>'
                     
                     card_html += '</div>'
+                    
+                    # Mostra la card con HTML sicuro
                     st.markdown(card_html, unsafe_allow_html=True)
             else:
                 # Messaggio quando non ci sono circolari
