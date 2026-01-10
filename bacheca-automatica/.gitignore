@@ -1,0 +1,5 @@
+downloads_temp/
+*.png
+*.log
+__pycache__/
+*.pyc
