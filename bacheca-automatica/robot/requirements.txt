@@ -1,0 +1,11 @@
+streamlit>=1.28.0
+supabase>=1.0.0
+pandas>=2.0.0
+python-dotenv>=1.0.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+pytz>=2023.3
+selenium==4.15.0
+psycopg2-binary==2.9.9
+chromedriver-autoinstaller==0.6.0
+chromedriver-binary>=121.0.0
