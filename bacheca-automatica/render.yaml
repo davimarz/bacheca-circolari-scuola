@@ -1,13 +1,13 @@
 services:
   - type: web
-    name: bacheca-circolari-scuola
+    name: bacheca-automatica
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+    startCommand: python bacheca-automatica/robot/leggi_circolari.py
     envVars:
-      - key: SUPABASE_URL
+      - key: ARGO_USER
+        value: davide.marziano.sc26953
+      - key: ARGO_PASS
         sync: false
-      - key: SUPABASE_KEY
+      - key: DB_PASSWORD
         sync: false
-      - key: PORT
-        value: 10000
