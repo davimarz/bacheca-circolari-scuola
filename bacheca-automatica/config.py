@@ -9,6 +9,8 @@ DB_CONFIG = {
     "password": os.environ.get("DB_PASSWORD", "dvd2Web@17."),
     "sslmode": "require",
     "connect_timeout": 15,
+    "keepalives": 1,
+    "keepalives_idle": 30,
 }
 
 # ==================== CREDENZIALI ARGO ====================
@@ -17,15 +19,3 @@ ARGO_PASS = os.environ.get("ARGO_PASS", "")
 
 # ==================== URL SITI ====================
 ARGO_URL = "https://www.argoscuola.it"
-
-# ==================== CONFIGURAZIONE CHROME ====================
-# Path dove Chrome sarà installato su Render
-CHROME_PATH = "/usr/bin/google-chrome-stable"
-
-CHROME_OPTIONS = {
-    "headless": "new",
-    "no-sandbox": True,
-    "disable-dev-shm-usage": True,
-    "disable-gpu": True,
-    "window-size": "1920,1080",
-}
