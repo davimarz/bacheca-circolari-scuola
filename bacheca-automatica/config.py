@@ -6,7 +6,7 @@ import os
 # Quindi l'hostname del database è: db.ojnofjebrlwrlowovvjd.supabase.co
 
 DB_CONFIG = {
-    "host": "db.ojnofjebrlwrlowovvjd.supabase.co",  # Hostname diretto
+    "host": "db.ojnofjebr.lwrlowovvjd.supabase.co",
     "port": 5432,  # Porta standard PostgreSQL
     "database": "postgres",
     "user": "postgres",  # Username semplice (senza .project-id)
